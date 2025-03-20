@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>迅雷Docker下载助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div id="configPage">
+      <h1>首次配置</h1>
+      <form id="configForm">
+        <div class="form-group">
+          <label for="dockerHost">Docker Host:</label>
+          <input type="text" id="dockerHost" required>
+        </div>
+        <div class="form-group">
+          <label for="dockerPort">Docker Port:</label>
+          <input type="number" id="dockerPort" required>
+        </div>
+        <button type="submit">保存配置</button>
+      </form>
+    </div>
+    
+    <div id="taskPage" style="display: none;">
+      <div class="header">
+        <h1>下载任务</h1>
+        <button id="configButton">重新配置</button>
+      </div>
+      <div id="taskList"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

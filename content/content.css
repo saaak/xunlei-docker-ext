@@ -1,0 +1,18 @@
+.xunlei-download-btn {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  margin-left: 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.xunlei-download-btn:hover {
+  background-color: #1E88E5;
+}
+
+.xunlei-download-btn:active {
+  background-color: #1976D2;
+}

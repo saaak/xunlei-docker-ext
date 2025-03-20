@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "迅雷Docker下载助手",
+  "version": "1.0",
+  "description": "连接Docker部署的迅雷进行下载任务管理",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"]
+    }
+  ],
+  "icons": {
+  }
+}
