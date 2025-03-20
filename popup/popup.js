@@ -8,17 +8,19 @@ const taskList = document.getElementById('taskList');
 const configButton = document.getElementById('configButton');
 
 // 页面初始化
-document.addEventListener('DOMContentLoaded', () => {
-  chrome.runtime.sendMessage({ type: 'getConfig' }, (config) => {
-    if (config.dockerHost && config.dockerPort) {
-      // 已配置，显示任务页面
-      showTaskPage();
-      refreshTaskList();
-    } else {
-      // 未配置，显示配置页面
-      showConfigPage();
-    }
-  });
+document.addEventListener('DOMContentLoaded', async () => {
+  const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+  console.log('config', config);
+  if (config.host && config.port) {
+    // 已配置，显示任务页面
+    showTaskPage();
+    await refreshTaskList();
+    // 每5秒刷新任务列表
+    setInterval(refreshTaskList, 5000);
+  } else {
+    // 未配置，显示配置页面
+    showConfigPage();
+  }
 });
 
 // 显示配置页面
@@ -59,19 +61,20 @@ configButton.addEventListener('click', () => {
 });
 
 // 获取并展示任务列表
-function refreshTaskList() {
-  chrome.runtime.sendMessage(
-    { type: 'getTasks' },
-    (tasks) => {
-      taskList.innerHTML = tasks
-        .map(task => `
-          <div class="task-item">
-            <span>${task.name}</span>
-            <span>${task.status}</span>
-            <span>${task.progress}%</span>
-          </div>
-        `)
-        .join('');
-    }
-  );
+async function refreshTaskList() {
+  try {
+    const tasks = await chrome.runtime.sendMessage({ type: 'getTasks' });
+    taskList.innerHTML = tasks
+      .map(task => `
+        <div class="task-item">
+          <span>${task.name}</span>
+          <span>${(task.speed / 1024 / 1024).toFixed(2)}Mb/s</span>
+          <span>${task.progress}%</span>
+        </div>
+      `)
+      .join('');
+  } catch (error) {
+    console.error('Failed to get tasks:', error);
+    taskList.innerHTML = error;
+  }
 }
