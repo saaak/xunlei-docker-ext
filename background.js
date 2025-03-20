@@ -1,63 +1,49 @@
-// 配置存储
-let config = {
-  dockerHost: 'localhost',
-  dockerPort: 9000,
-  fileTypes: []
-};
+import { ApiClient } from './src/utils/api.js';
 
-// 初始化配置
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.set({ config });
-});
+let apiClient = null;
+let deviceId = null;
 
-// 监听popup消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  switch (request.type) {
-    case 'getConfig':
-      chrome.storage.sync.get(['config'], (result) => {
-        sendResponse(result.config);
-      });
-      return true;
-      
-    case 'updateConfig':
-      chrome.storage.sync.set({ config: request.config }, () => {
-        sendResponse({ success: true });
-      });
-      return true;
-      
-    case 'submitTask':
-      submitTask(request.task)
-        .then(response => sendResponse(response))
-        .catch(error => sendResponse({ error }));
-      return true;
-  }
-});
-
-// 提交任务到Docker迅雷
-async function submitTask(task) {
-  const { dockerHost, dockerPort } = await getConfig();
-  const url = `http://${dockerHost}:${dockerPort}/api/tasks`;
-  
+// 监听扩展图标点击
+chrome.action.onClicked.addListener(async (tab) => {
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(task)
-    });
-    
-    return response.json();
-  } catch (error) {
-    throw new Error('无法连接到Docker迅雷');
-  }
-}
+    if (!apiClient) {
+      // 从storage中获取配置
+      const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+      if (!config.host || !config.port) {
+        // 打开配置页面
+        chrome.tabs.create({ url: 'popup/popup.html' });
+        return;
+      }
+      
+      apiClient = new ApiClient(config.host, config.port, config.ssl);
+    }
 
-// 获取配置
-function getConfig() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(['config'], (result) => {
-      resolve(result.config);
+    // 获取deviceId
+    deviceId = await apiClient.getDeviceId();
+    
+    // 保存deviceId
+    await chrome.storage.sync.set({ deviceId });
+
+    // 打开popup页面
+    chrome.action.setPopup({ popup: 'popup/popup.html' });
+    
+  } catch (error) {
+    console.error('Failed to get device ID:', error);
+    // 显示错误提示
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: '获取设备ID失败',
+      message: error.message
     });
-  });
-}
+  }
+});
+
+// 监听配置更新
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.host || changes.port || changes.ssl) {
+    // 配置更新时重置apiClient
+    apiClient = null;
+    deviceId = null;
+  }
+});
