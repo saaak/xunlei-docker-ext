@@ -17,6 +17,7 @@ function generatePanAuth() {
 }
 
 async function request({ method = 'GET', url, data = {} }) {
+  const panAuth = generatePanAuth();
   const headers = {
     'DNT': '1',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)...',
@@ -24,19 +25,23 @@ async function request({ method = 'GET', url, data = {} }) {
     'content-type': 'application/json',
     'Accept': '*/*',
     'Accept-Language': 'zh-CN,zh;q=0.9',
-    'pan-auth': generatePanAuth()
+    'X-Syno-Token': '6ry6v6454hqy4',
+    'pan-auth': panAuth
   };
 
 
   const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
   const baseUrl = buildBaseUrl(config);
 
+  const urlObj = new URL(baseUrl + url); // baseUrl 是完整域名
+  urlObj.searchParams.append('pan-auth', panAuth);
+
   const options = { method, headers };
   if (method === 'POST') {
     options.body = JSON.stringify(data);
   }
 
-  const response = await fetch(baseUrl + url, options);
+  const response = await fetch(urlObj.href, options);
   if (!response.ok) throw new Error(`API Error: ${response.status}`);
   return await response.json();
 }

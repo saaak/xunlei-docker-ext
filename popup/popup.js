@@ -6,6 +6,10 @@ const dockerHostInput = document.getElementById('dockerHost');
 const dockerPortInput = document.getElementById('dockerPort');
 const taskList = document.getElementById('taskList');
 const configButton = document.getElementById('configButton');
+const uncompletedTab = document.getElementById('uncompletedTab');
+const completedTab = document.getElementById('completedTab');
+
+let currentTab = 'uncompleted';
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,6 +21,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
     showConfigPage();
   }
+
+  // 绑定tab点击事件
+  uncompletedTab.addEventListener('click', () => {
+    if (currentTab !== 'uncompleted') {
+      currentTab = 'uncompleted';
+      uncompletedTab.classList.add('active');
+      completedTab.classList.remove('active');
+      refreshTaskList();
+    }
+  });
+
+  completedTab.addEventListener('click', () => {
+    if (currentTab !== 'completed') {
+      currentTab = 'completed';
+      completedTab.classList.add('active');
+      uncompletedTab.classList.remove('active');
+      refreshTaskList();
+    }
+  });
 });
 
 // 显示配置页面
@@ -59,13 +82,20 @@ configButton.addEventListener('click', () => {
 // 获取并展示任务列表
 async function refreshTaskList() {
   try {
-    const tasks = await chrome.runtime.sendMessage({ type: 'getTasks' });
+    const messageType = currentTab === 'uncompleted' ? 'getTasks' : 'getCompletedTasks';
+    const tasks = await chrome.runtime.sendMessage({ type: messageType });
+    
     taskList.innerHTML = tasks
       .map(task => `
         <div class="task-item">
           <span>${task.name}</span>
-          <span>${(task.speed / 1024 / 1024).toFixed(2)}Mb/s</span>
-          <span>${task.progress}%</span>
+          ${currentTab === 'uncompleted' ? `
+            <span>${(task.speed / 1024 / 1024).toFixed(2)}Mb/s</span>
+            <span>${task.progress}%</span>
+          ` : `
+            <span>已完成</span>
+            <span>${new Date(task.created_time).toLocaleDateString()}</span>
+          `}
         </div>
       `)
       .join('');

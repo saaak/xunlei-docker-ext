@@ -1,18 +1,52 @@
-import { getDeviceId, getUncompletedTasks } from './utils/api.js';
-
+import { getDeviceId, getUncompletedTasks, extractFileList, createFolder, submitTask } from './utils/api.js';
+import { parseDeviceId } from './utils/util.js';
 let deviceId = null;
 
 // 扩展图标点击事件
 chrome.action.onClicked.addListener(async () => {
   try {
-    await chrome.action.setPopup({ popup: 'popup/popup.html' });
+    const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+    
+    if (!config.host || !config.port) {
+      // 没配置，显示配置页
+      await chrome.action.setPopup({ popup: 'popup/popup.html' });
+      return;
+    }
+
+    // 检查 deviceId 是否缓存
+    const cache = await chrome.storage.local.get('deviceId');
+    if (cache.deviceId) {
+      deviceId = cache.deviceId;
+      await chrome.action.setPopup({ popup: 'popup/popup.html' });
+      return;
+    }
+
+    // 没有缓存，尝试获取 deviceId
+    try {
+      const deviceResponse = await getDeviceId();
+      const id = parseDeviceId(deviceResponse); // 需要你实现这个函数，提取真正的 ID
+      if (id) {
+        deviceId = id;
+        await chrome.storage.local.set({ deviceId: id });
+        await chrome.action.setPopup({ popup: 'popup/popup.html' });
+      } else {
+        // 解析失败，显示配置页
+        await chrome.action.setPopup({ popup: 'popup/popup.html' });
+      }
+    } catch (err) {
+      console.error('获取 DeviceId 失败:', err);
+      // 获取失败，显示配置页
+      await chrome.action.setPopup({ popup: 'popup/popup.html' });
+    }
+
   } catch (error) {
-    console.error('Failed to init', error);
+    console.error('初始化失败:', error);
+    await chrome.action.setPopup({ popup: 'popup/popup.html' });
   }
 });
 
 // 消息监听
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === 'updateConfig') {
     const config = message.config || {};
     if (config.host && config.port) {
@@ -29,13 +63,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
-  if (message.type === 'getTasks') {
+  if (message.type === 'getTasks' || message.type === 'getCompletedTasks') {
     try {
       getDeviceId().then(
         (id) => {
           deviceId = id;
-          getUncompletedTasks(deviceId).then(
+          const taskPromise = message.type === 'getTasks' ?
+            getUncompletedTasks(deviceId) :
+            getCompletedTasks(deviceId);
+            
+          taskPromise.then(
             (tasks) => {
+              tasks = tasks.map(task => ({
+                file_name: task.name,
+                name: task.name,
+                file_size: parseInt(task.file_size),
+                updated_time: task.updated_time,
+                progress: task.progress || 0,
+                real_path: task.params?.real_path || '',
+                speed: parseInt(task.params?.speed || 0),
+                created_time: task.created_time,
+                origin: task
+              }))
               sendResponse(tasks);
             }
           )
@@ -52,16 +101,77 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       const task = message.task;
       if (task && task.magnetic_link) {
-        const response = await chrome.runtime.sendMessage({
-          type: 'submitTask',
-          task: {
-            magnetic_link: task.magnetic_link
+        const extractRes = await extractFileList(task.magnetic_link);
+        const resources = extractRes?.list?.resources;
+        const taskName = resources?.[0]?.name;
+        const taskFileCount = resources?.[0]?.file_count;
+        function parseResources(resList) {
+          for (const resource of resList) {
+            if (resource.is_dir) {
+              parseResources(resource.dir.resources);
+            } else {
+              const fileIndex = resource.file_index || 0;
+              taskFiles.push({
+                index: fileIndex,
+                file_size: resource.file_size,
+                file_name: resource.name
+              });
+            }
           }
-        });
-        sendResponse(response);
+        }
+        parseResources(resources);
+
+        let finalTaskFiles = taskFiles;
+        if (typeof preprocessFiles === 'function') {
+          finalTaskFiles = preprocessFiles(taskFiles);
+        }
+
+        let targetParentId = parentFolderId;
+        if (subDir) {
+          if (subDir.includes('/')) {
+            console.error("Multilevel subdirectories are not supported");
+            return false;
+          }
+          const createFolderBody = {
+            parent_id: parentFolderId,
+            name: subDir,
+            space: deviceId,
+            kind: "drive#folder"
+          };
+          const folderResponse = await createFolder(createFolderBody);
+          targetParentId = folderResponse?.file?.id;
+        }
+
+        const subFileIndex = finalTaskFiles.map(f => f.index.toString());
+        const submitBody = {
+          type: "user#download-url",
+          name: taskName,
+          file_name: taskName,
+          file_size: finalTaskFiles.reduce((sum, f) => sum + f.file_size, 0).toString(),
+          space: deviceId,
+          params: {
+            target: deviceId,
+            url: magneticLink,
+            total_file_count: taskFileCount.toString(),
+            parent_folder_id: targetParentId,
+            sub_file_index: subFileIndex.join(','),
+            file_id: ""
+          }
+        };
+        const submitResponse = await submitTask(submitBody);
+        
+        if (submitResponse?.HttpStatus === 0) {
+          return 1; // 成功
+        } else {
+          return 0; // 失败
+        }
+        sendResponse();
       } else {
         sendResponse({ error: '无效任务' });
       }
+    } catch (error) {
+      console.error('Failed to submit task:', error);
+      sendResponse({ error: '提交任务失败' });
     }
   }
   
