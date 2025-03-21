@@ -10,15 +10,11 @@ const configButton = document.getElementById('configButton');
 // 页面初始化
 document.addEventListener('DOMContentLoaded', async () => {
   const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
-  console.log('config', config);
   if (config.host && config.port) {
-    // 已配置，显示任务页面
     showTaskPage();
     await refreshTaskList();
-    // 每5秒刷新任务列表
     setInterval(refreshTaskList, 5000);
   } else {
-    // 未配置，显示配置页面
     showConfigPage();
   }
 });
@@ -40,8 +36,8 @@ configForm.addEventListener('submit', (e) => {
   e.preventDefault();
   
   const config = {
-    dockerHost: dockerHostInput.value,
-    dockerPort: dockerPortInput.value
+    host: dockerHostInput.value,
+    port: dockerPortInput.value
   };
   
   chrome.runtime.sendMessage(

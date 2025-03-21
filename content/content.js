@@ -7,7 +7,7 @@ function detectMagnetLinks() {
       // 创建下载按钮
       const button = document.createElement('button');
       button.className = 'xunlei-download-btn';
-      button.textContent = '使用迅雷下载';
+      button.textContent = 'Docker迅雷下载';
       
       // 插入按钮
       link.parentNode.insertBefore(button, link.nextSibling);
@@ -23,7 +23,7 @@ function detectMagnetLinks() {
           const response = await chrome.runtime.sendMessage({
             type: 'submitTask',
             task: {
-              url: link.href
+              magnetic_link: link.href
             }
           });
           
