@@ -20,18 +20,16 @@ function detectMagnetLinks() {
         e.preventDefault();
         
         try {
-          const response = await chrome.runtime.sendMessage({
+          chrome.runtime.sendMessage({
             type: 'submitTask',
             task: {
               magnetic_link: link.href
             }
-          });
-          
-          if (response.error) {
-            alert('提交任务失败: ' + response.error);
-          } else {
-            alert('任务已提交');
-          }
+          }).then(
+            response => {
+              alert('提交任务: ' + response)
+            }
+          );
         } catch (error) {
           alert('提交任务失败: ' + error.message);
         }

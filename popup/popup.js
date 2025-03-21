@@ -83,22 +83,23 @@ configButton.addEventListener('click', () => {
 async function refreshTaskList() {
   try {
     const messageType = currentTab === 'uncompleted' ? 'getTasks' : 'getCompletedTasks';
-    const tasks = await chrome.runtime.sendMessage({ type: messageType });
+    chrome.runtime.sendMessage({ type: messageType }, (tasks) => {
+      taskList.innerHTML = tasks
+        .map(task => `
+          <div class="task-item">
+            <span>${task.name}</span>
+            ${currentTab === 'uncompleted' ? `
+              <span>${(task.speed / 1024 / 1024).toFixed(2)}Mb/s</span>
+              <span>${task.progress}%</span>
+            ` : `
+              <span>已完成</span>
+              <span>${new Date(task.created_time).toLocaleDateString()}</span>
+            `}
+          </div>
+        `)
+        .join('');
+    });
     
-    taskList.innerHTML = tasks
-      .map(task => `
-        <div class="task-item">
-          <span>${task.name}</span>
-          ${currentTab === 'uncompleted' ? `
-            <span>${(task.speed / 1024 / 1024).toFixed(2)}Mb/s</span>
-            <span>${task.progress}%</span>
-          ` : `
-            <span>已完成</span>
-            <span>${new Date(task.created_time).toLocaleDateString()}</span>
-          `}
-        </div>
-      `)
-      .join('');
   } catch (error) {
     console.error('Failed to get tasks:', error);
     taskList.innerHTML = error;

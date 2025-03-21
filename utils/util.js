@@ -1,15 +1,7 @@
-export function parseDeviceId(response) {
+export function parseDeviceId(response, deviceName = null) {
   let deviceId = null;
 
-  if (response.status === 500) {
-    throw new Error('Not logged in to Xunlei account');
-  }
-  
-  if (response.data?.error_code === 403) {
-    throw new Error('Pan auth invalid');
-  }
-
-  const tasks = response.data?.tasks || [];
+  const tasks = response.tasks || [];
   
   if (tasks.length === 0) {
     throw new Error('No remote device is bound');
