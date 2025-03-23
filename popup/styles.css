@@ -98,3 +98,69 @@ button:hover {
   border-bottom-color: #2196F3;
   font-weight: bold;
 }
+
+/* 文件树样式 */
+.file-tree {
+  margin-top: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-tree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.file-tree ul {
+  list-style: none;
+  padding-left: 20px;
+  margin: 0;
+}
+
+.file-tree li {
+  padding: 5px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.file-tree li:hover {
+  background-color: #f5f5f5;
+}
+
+.file-tree .folder {
+  font-weight: bold;
+  color: #2196F3;
+}
+
+.file-tree .folder::before {
+  content: '▶';
+  display: inline-block;
+  width: 15px;
+  transition: transform 0.2s;
+}
+
+.file-tree .folder.open::before {
+  transform: rotate(90deg);
+}
+
+.file-tree .file {
+  padding-left: 20px;
+  color: #666;
+}
+
+.file-tree input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+#confirmSelection {
+  background-color: #4CAF50;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+#confirmSelection:hover {
+  background-color: #45a049;
+}

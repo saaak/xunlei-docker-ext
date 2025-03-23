@@ -30,8 +30,20 @@
       <div class="tabs">
         <button id="uncompletedTab" class="tab active">未完成</button>
         <button id="completedTab" class="tab">已完成</button>
+        <button id="fileSelectTab" class="tab">选择文件</button>
       </div>
+      
       <div id="taskList"></div>
+      
+      <div id="fileSelectPage" style="display: none;">
+        <div class="file-tree">
+          <div class="file-tree-header">
+            <h2>选择下载文件</h2>
+            <button id="confirmSelection">确认选择</button>
+          </div>
+          <div id="fileTree"></div>
+        </div>
+      </div>
     </div>
   </div>
 

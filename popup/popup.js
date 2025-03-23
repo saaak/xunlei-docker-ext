@@ -8,6 +8,10 @@ const taskList = document.getElementById('taskList');
 const configButton = document.getElementById('configButton');
 const uncompletedTab = document.getElementById('uncompletedTab');
 const completedTab = document.getElementById('completedTab');
+const fileSelectTab = document.getElementById('fileSelectTab');
+const fileTree = document.getElementById('fileTree');
+const confirmSelection = document.getElementById('confirmSelection');
+const fileSelectPage = document.getElementById('fileSelectPage');
 
 let currentTab = 'uncompleted';
 
@@ -37,7 +41,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTab = 'completed';
       completedTab.classList.add('active');
       uncompletedTab.classList.remove('active');
+      fileSelectTab.classList.remove('active');
+      taskList.style.display = 'block';
+      fileSelectPage.style.display = 'none';
       refreshTaskList();
+    }
+  });
+
+  fileSelectTab.addEventListener('click', () => {
+    if (currentTab !== 'fileSelect') {
+      currentTab = 'fileSelect';
+      fileSelectTab.classList.add('active');
+      uncompletedTab.classList.remove('active');
+      completedTab.classList.remove('active');
+      taskList.style.display = 'none';
+      fileSelectPage.style.display = 'block';
+      loadFileTree();
     }
   });
 });
@@ -80,6 +99,89 @@ configButton.addEventListener('click', () => {
 });
 
 // 获取并展示任务列表
+// 加载文件树
+async function loadFileTree() {
+  try {
+    chrome.runtime.sendMessage({ type: 'getFileTree' }, (files) => {
+      fileTree.innerHTML = renderFileTree(files);
+      addTreeEventListeners();
+    });
+  } catch (error) {
+    console.error('Failed to load file tree:', error);
+    fileTree.innerHTML = `<div class="error">${error.message}</div>`;
+  }
+}
+
+// 渲染文件树
+function renderFileTree(files, level = 0) {
+  return `
+    <ul>
+      ${files.map(file => `
+        <li class="${file.isDirectory ? 'folder' : 'file'}">
+          ${file.isDirectory ? `
+            <input type="checkbox" ${file.checked ? 'checked' : ''}>
+            <span>${file.name}</span>
+          ` : `
+            <input type="checkbox" ${file.checked ? 'checked' : ''}>
+            <span>${file.name}</span>
+          `}
+          ${file.children ? renderFileTree(file.children, level + 1) : ''}
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+// 添加文件树事件监听
+function addTreeEventListeners() {
+  const folders = fileTree.querySelectorAll('.folder');
+  folders.forEach(folder => {
+    folder.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT') {
+        folder.classList.toggle('open');
+      }
+    });
+  });
+
+  // 处理文件夹选择
+  fileTree.addEventListener('change', (e) => {
+    if (e.target.type === 'checkbox') {
+      const parentLi = e.target.closest('li');
+      if (parentLi.classList.contains('folder')) {
+        const children = parentLi.querySelectorAll('input[type="checkbox"]');
+        children.forEach(child => {
+          child.checked = e.target.checked;
+        });
+      }
+    }
+  });
+}
+
+// 确认文件选择
+confirmSelection.addEventListener('click', () => {
+  const selectedFiles = [];
+  const checkboxes = fileTree.querySelectorAll('input[type="checkbox"]:checked');
+  
+  checkboxes.forEach(checkbox => {
+    const fileName = checkbox.nextElementSibling.textContent;
+    if (!checkbox.closest('.folder')) {
+      selectedFiles.push(fileName);
+    }
+  });
+
+  chrome.runtime.sendMessage({
+    type: 'setSelectedFiles',
+    files: selectedFiles
+  }, () => {
+    currentTab = 'uncompleted';
+    uncompletedTab.classList.add('active');
+    fileSelectTab.classList.remove('active');
+    taskList.style.display = 'block';
+    fileSelectPage.style.display = 'none';
+    refreshTaskList();
+  });
+});
+
 async function refreshTaskList() {
   try {
     const messageType = currentTab === 'uncompleted' ? 'getTasks' : 'getCompletedTasks';

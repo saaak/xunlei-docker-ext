@@ -3,6 +3,28 @@ import { parseDeviceId } from './utils/util.js';
 let deviceId = null;
 let parentFolderId = null;
 
+// 初始化deviceId
+async function initDeviceId() {
+  try {
+    // 检查本地缓存
+    const cachedDevice = await chrome.storage.local.get(['deviceId']);
+    if (cachedDevice.deviceId) {
+      deviceId = cachedDevice.deviceId;
+      return;
+    }
+
+    // 没有缓存则获取新的deviceId
+    const deviceResponse = await getDeviceId();
+    const id = parseDeviceId(deviceResponse);
+    if (id) {
+      deviceId = id;
+      await chrome.storage.local.set({ deviceId: id });
+    }
+  } catch (error) {
+    console.error('初始化deviceId失败:', error);
+  }
+}
+
 // 扩展图标点击事件
 chrome.action.onClicked.addListener(async () => {
   try {
@@ -14,23 +36,9 @@ chrome.action.onClicked.addListener(async () => {
       return;
     }
 
-    // 没有缓存，尝试获取 deviceId
-    try {
-      const deviceResponse = await getDeviceId();
-      const id = parseDeviceId(deviceResponse);
-      if (id) {
-        deviceId = id;
-        await chrome.storage.local.set({ deviceId: id });
-        await chrome.action.setPopup({ popup: 'popup/popup.html' });
-      } else {
-        // 解析失败，显示配置页
-        await chrome.action.setPopup({ popup: 'popup/popup.html' });
-      }
-    } catch (err) {
-      console.error('获取 DeviceId 失败:', err);
-      // 获取失败，显示配置页
-      await chrome.action.setPopup({ popup: 'popup/popup.html' });
-    }
+    // 初始化deviceId
+    await initDeviceId();
+    await chrome.action.setPopup({ popup: 'popup/popup.html' });
 
   } catch (error) {
     console.error('初始化失败:', error);
@@ -82,127 +90,95 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'submitTask') {
-    try {
-      const task = message.task;
-      if (task && task.magnetic_link) {
-        extractFileList(task.magnetic_link).then(
-          (extractRes) => {
-            const resources = extractRes?.list?.resources;
-            const taskName = resources?.[0]?.name;
-            const taskFileCount = resources?.[0]?.file_count;
-            const taskFiles = []
-            function parseResources(resList) {
-              for (const resource of resList) {
-                if (resource.is_dir) {
-                  parseResources(resource.dir.resources);
-                } else {
-                  const fileIndex = resource.file_index || 0;
-                  taskFiles.push({
-                    index: fileIndex,
-                    file_size: resource.file_size,
-                    file_name: resource.name
-                  });
-                }
-              }
-            }
-            parseResources(resources);
-            
-            let finalTaskFiles = taskFiles;
-            if (typeof preprocessFiles === 'function') {
-              finalTaskFiles = preprocessFiles(taskFiles);
-            }
-
-            if (!parentFolderId) {
-              getParentFolderId(deviceId).then(
-                (res) => {
-                  parentFolderId = res?.files?.[0]?.parent_id;
-
-                  let targetParentId = parentFolderId;
-                  // if (subDir) {
-                  //   if (subDir.includes('/')) {
-                  //     console.error("Multilevel subdirectories are not supported");
-                  //     return false;
-                  //   }
-                  //   const createFolderBody = {
-                  //     parent_id: parentFolderId,
-                  //     name: subDir,
-                  //     space: deviceId,
-                  //     kind: "drive#folder"
-                  //   };
-                  //   const folderResponse = await createFolder(createFolderBody);
-                  //   targetParentId = folderResponse?.file?.id;
-                  // }
-      
-                  const subFileIndex = finalTaskFiles.map(f => f.index.toString());
-                  const submitBody = {
-                    type: "user#download-url",
-                    name: taskName,
-                    file_name: taskName,
-                    file_size: finalTaskFiles.reduce((sum, f) => sum + f.file_size, 0).toString(),
-                    space: deviceId,
-                    params: {
-                      target: deviceId,
-                      url: task.magnetic_link,
-                      total_file_count: taskFileCount.toString(),
-                      parent_folder_id: targetParentId,
-                      sub_file_index: subFileIndex.join(','),
-                      file_id: ""
-                    }
-                  };
-                  submitTask(submitBody);
-                  sendResponse();
-                }
-              )
-            } else {
-              let targetParentId = parentFolderId;
-              // if (subDir) {
-              //   if (subDir.includes('/')) {
-              //     console.error("Multilevel subdirectories are not supported");
-              //     return false;
-              //   }
-              //   const createFolderBody = {
-              //     parent_id: parentFolderId,
-              //     name: subDir,
-              //     space: deviceId,
-              //     kind: "drive#folder"
-              //   };
-              //   const folderResponse = await createFolder(createFolderBody);
-              //   targetParentId = folderResponse?.file?.id;
-              // }
-  
-              const subFileIndex = finalTaskFiles.map(f => f.index.toString());
-              const submitBody = {
-                type: "user#download-url",
-                name: taskName,
-                file_name: taskName,
-                file_size: finalTaskFiles.reduce((sum, f) => sum + f.file_size, 0).toString(),
-                space: deviceId,
-                params: {
-                  target: deviceId,
-                  url: task.magnetic_link,
-                  total_file_count: taskFileCount.toString(),
-                  parent_folder_id: targetParentId,
-                  sub_file_index: subFileIndex.join(','),
-                  file_id: ""
-                }
-              };
-              submitTask(submitBody);
-              sendResponse();
-            }
-
-           
-          }
-        )
+  if (message.type === 'getFileTree') {
+    (async () => {
+      try {
+        if (!message.magnetic_link) {
+          throw new Error('缺少磁力链接');
+        }
         
-
-      } else {
-        sendResponse({ error: '无效任务' });
+        const extractRes = await extractFileList(message.magnetic_link);
+        const resources = extractRes?.list?.resources || [];
+        
+        function parseResources(resList) {
+          return resList.map(resource => ({
+            name: resource.name,
+            isDirectory: resource.is_dir,
+            children: resource.is_dir ? parseResources(resource.dir.resources) : [],
+            file_index: resource.file_index || 0,
+            file_size: resource.file_size || 0
+          }));
+        }
+        
+        const files = parseResources(resources);
+        sendResponse(files);
+      } catch (error) {
+        console.error('Failed to get file tree:', error);
+        sendResponse([]);
       }
-    } catch (error) {
-      console.error('Failed to submit task:', error);
-      sendResponse({ error: '提交任务失败' });
-    }
+    })();
+    return true;
+  }
+
+  if (message.type === 'setSelectedFiles') {
+    (async () => {
+      try {
+        await chrome.storage.local.set({
+          finalTaskFiles: message.files
+        });
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('Failed to save selected files:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'submitTask') {
+    const handleSubmitTask = async () => {
+      try {
+        const task = message.task;
+        if (!task || !task.magnetic_link || !task.selected_files) {
+          throw new Error('无效任务');
+        }
+        console.log('提交任务:', task);
+
+        const finalTaskFiles = task.selected_files;
+        const taskName = finalTaskFiles[0]?.file_name || '下载任务';
+        const taskFileCount = finalTaskFiles.length;
+
+        if (!parentFolderId) {
+          const res = await getParentFolderId(deviceId);
+          parentFolderId = res?.files?.[0]?.parent_id;
+        }
+
+        const submitBody = {
+          type: "user#download-url",
+          name: taskName,
+          file_name: taskName,
+          file_size: finalTaskFiles.reduce((sum, f) => sum + f.file_size, 0).toString(),
+          space: deviceId,
+          params: {
+            target: deviceId,
+            url: task.magnetic_link,
+            total_file_count: taskFileCount.toString(),
+            parent_folder_id: parentFolderId,
+            sub_file_index: finalTaskFiles.map(f => f.index.toString()).join(','),
+            file_id: ""
+          }
+        };
+        
+        await submitTask(submitBody);
+        return { success: true };
+      } catch (error) {
+        console.error('Failed to submit task:', error);
+        return { success: false, error: error.message };
+      }
+    };
+
+    handleSubmitTask().then(sendResponse);
+    return true;
   }
   
 });
