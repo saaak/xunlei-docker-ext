@@ -64,9 +64,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
-  if (message.type === 'getTasks' || message.type === 'getCompletedTasks') {
+  if (message.type === 'getUncompletedTasks' || message.type === 'getCompletedTasks') {
     try {
-      const taskPromise = message.type === 'getTasks' ? getUncompletedTasks(deviceId) : getCompletedTasks(deviceId);
+      const taskPromise = message.type === 'getUncompletedTasks' ? getUncompletedTasks(deviceId) : getCompletedTasks(deviceId);
       taskPromise.then(resp => {
         const tasks = resp?.tasks ? resp.tasks : [];
         const res = tasks.map(task => ({
@@ -115,21 +115,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       } catch (error) {
         console.error('Failed to get file tree:', error);
         sendResponse([]);
-      }
-    })();
-    return true;
-  }
-
-  if (message.type === 'setSelectedFiles') {
-    (async () => {
-      try {
-        await chrome.storage.local.set({
-          finalTaskFiles: message.files
-        });
-        sendResponse({ success: true });
-      } catch (error) {
-        console.error('Failed to save selected files:', error);
-        sendResponse({ success: false, error: error.message });
       }
     })();
     return true;
