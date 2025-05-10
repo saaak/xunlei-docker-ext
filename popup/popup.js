@@ -1,4 +1,3 @@
-// 获取DOM元素
 const configPage = document.getElementById('configPage');
 const taskPage = document.getElementById('taskPage');
 const configForm = document.getElementById('configForm');
@@ -10,7 +9,6 @@ const uncompletedTab = document.getElementById('uncompletedTab');
 const completedTab = document.getElementById('completedTab');
 let currentTab = 'uncompleted';
 
-// 页面初始化
 document.addEventListener('DOMContentLoaded', async () => {
   const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
   if (config.host && config.port) {
@@ -21,7 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     showConfigPage();
   }
 
-  // 绑定tab点击事件
   uncompletedTab.addEventListener('click', () => {
     if (currentTab !== 'uncompleted') {
       currentTab = 'uncompleted';
@@ -42,19 +39,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-// 显示配置页面
 function showConfigPage() {
   configPage.style.display = 'block';
   taskPage.style.display = 'none';
 }
 
-// 显示任务页面
 function showTaskPage() {
   configPage.style.display = 'none';
   taskPage.style.display = 'block';
 }
 
-// 处理配置表单提交
 configForm.addEventListener('submit', (e) => {
   e.preventDefault();
   
@@ -74,7 +68,6 @@ configForm.addEventListener('submit', (e) => {
   );
 });
 
-// 处理配置按钮点击
 configButton.addEventListener('click', () => {
   showConfigPage();
 });

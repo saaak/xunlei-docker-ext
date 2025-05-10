@@ -4,29 +4,23 @@ function detectMagnetLinks() {
   
   links.forEach(link => {
     if (!link.dataset.xunleiProcessed) {
-      // 创建下载按钮
       const button = document.createElement('button');
       button.className = 'xunlei-download-btn';
       button.textContent = 'Docker迅雷下载';
       
-      // 插入按钮
       link.parentNode.insertBefore(button, link.nextSibling);
       
-      // 标记已处理
       link.dataset.xunleiProcessed = true;
       
-      // 添加点击事件
       button.addEventListener('click', async (e) => {
         e.preventDefault();
         
         try {
-          // 先获取文件树
           chrome.runtime.sendMessage({
             type: 'getFileTree',
             magnetic_link: link.href
           }).then(files => {
             if (files.length > 0) {
-              // 显示文件选择界面
               showFileSelection(files, link.href);
             } else {
               alert('未找到可下载的文件');
@@ -42,11 +36,26 @@ function detectMagnetLinks() {
 
 // 显示文件选择界面
 function showFileSelection(files, magneticLink) {
-  // 创建容器
   const container = document.createElement('div');
   container.className = 'xunlei-file-selector';
   
-  // 创建文件树
+  const taskNameContainer = document.createElement('div');
+  taskNameContainer.className = 'xunlei-task-name';
+  
+  const taskNameLabel = document.createElement('label');
+  taskNameLabel.textContent = '任务名(文件夹名):';
+  taskNameLabel.htmlFor = 'xunlei-task-name-input';
+  
+  const taskNameInput = document.createElement('input');
+  taskNameInput.type = 'text';
+  taskNameInput.id = 'xunlei-task-name-input';
+  taskNameInput.placeholder = '输入任务名(默认为第一个文件名)';
+  taskNameInput.value = files[0]?.name || '';
+  
+  taskNameContainer.appendChild(taskNameLabel);
+  taskNameContainer.appendChild(taskNameInput);
+  container.appendChild(taskNameContainer);
+  
   function createFileTree(files, parent) {
     const ul = document.createElement('ul');
     files.forEach(file => {
@@ -79,7 +88,6 @@ function showFileSelection(files, magneticLink) {
   // 添加文件树
   container.appendChild(createFileTree(files));
   
-  // 添加操作按钮
   const buttonContainer = document.createElement('div');
   buttonContainer.className = 'xunlei-buttons';
   
@@ -97,11 +105,14 @@ function showFileSelection(files, magneticLink) {
       }
     });
     
+    const taskName = taskNameInput.value.trim() || selectedFiles[0]?.file_name || '下载任务';
+    
     chrome.runtime.sendMessage({
       type: 'submitTask',
       task: {
         magnetic_link: magneticLink,
-        selected_files: selectedFiles
+        selected_files: selectedFiles,
+        task_name: taskName
       }
     }).then(response => {
       container.remove();
@@ -119,7 +130,6 @@ function showFileSelection(files, magneticLink) {
   buttonContainer.appendChild(cancelBtn);
   container.appendChild(buttonContainer);
   
-  // 添加到页面
   document.body.appendChild(container);
 }
 

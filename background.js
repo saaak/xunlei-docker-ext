@@ -6,14 +6,12 @@ let parentFolderId = null;
 // 初始化deviceId
 async function initDeviceId() {
   try {
-    // 检查本地缓存
     const cachedDevice = await chrome.storage.local.get(['deviceId']);
     if (cachedDevice.deviceId) {
       deviceId = cachedDevice.deviceId;
       return;
     }
 
-    // 没有缓存则获取新的deviceId
     const deviceResponse = await getDeviceId();
     const id = parseDeviceId(deviceResponse);
     if (id) {
@@ -31,12 +29,10 @@ chrome.action.onClicked.addListener(async () => {
     const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
     
     if (!config.host || !config.port) {
-      // 没配置，显示配置页
       await chrome.action.setPopup({ popup: 'popup/popup.html' });
       return;
     }
 
-    // 初始化deviceId
     await initDeviceId();
     await chrome.action.setPopup({ popup: 'popup/popup.html' });
 
@@ -127,10 +123,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!task || !task.magnetic_link || !task.selected_files) {
           throw new Error('无效任务');
         }
-        console.log('提交任务:', task);
 
         const finalTaskFiles = task.selected_files;
-        const taskName = finalTaskFiles[0]?.file_name || '下载任务';
+        const taskName = message.task.task_name || finalTaskFiles[0]?.file_name || '下载任务';
         const taskFileCount = finalTaskFiles.length;
 
         if (!parentFolderId) {
@@ -166,9 +161,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
-});
-
-// 监听配置更新
-chrome.storage.onChanged.addListener(() => {
-  console.log('配置已更新，重置 ApiClient');
 });

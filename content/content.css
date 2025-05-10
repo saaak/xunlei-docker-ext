@@ -17,6 +17,24 @@
   background-color: #1976D2;
 }
 
+.xunlei-task-name {
+  margin-bottom: 20px;
+}
+
+.xunlei-task-name label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.xunlei-task-name input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
 .xunlei-file-selector {
   position: fixed;
   top: 50%;
