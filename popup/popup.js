@@ -36,9 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentTab = 'completed';
       completedTab.classList.add('active');
       uncompletedTab.classList.remove('active');
-      fileSelectTab.classList.remove('active');
       taskList.style.display = 'block';
-      fileSelectPage.style.display = 'none';
       refreshTaskList();
     }
   });
