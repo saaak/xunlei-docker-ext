@@ -23,6 +23,16 @@ async function initDeviceId() {
   }
 }
 
+async function ensureDeviceIdInitialized() {
+  if (!deviceId) {
+    console.log('deviceId is null, attempting to initialize...');
+    await initDeviceId();
+  }
+  if (!deviceId) {
+    throw new Error('无法初始化 deviceId。请检查配置或网络连接。');
+  }
+}
+
 // 扩展图标点击事件
 chrome.action.onClicked.addListener(async () => {
   try {
@@ -61,29 +71,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'getUncompletedTasks' || message.type === 'getCompletedTasks') {
-    try {
-      const taskPromise = message.type === 'getUncompletedTasks' ? getUncompletedTasks(deviceId) : getCompletedTasks(deviceId);
-      taskPromise.then(resp => {
-        const tasks = resp?.tasks ? resp.tasks : [];
-        const res = tasks.map(task => ({
-          file_name: task.name,
-          name: task.name,
-          file_size: parseInt(task.file_size),
-          updated_time: task.updated_time,
-          progress: task.progress || 0,
-          real_path: task.params?.real_path || '',
-          speed: parseInt(task.params?.speed || 0),
-          created_time: task.created_time,
-          origin: task
-        }))
-        sendResponse(res);
-      })
-      
-    } catch (error) {
-      console.error('Failed to get tasks:', error);
-      sendResponse([]);
-    }
-    return true;
+      (async () => {
+        try {
+          await ensureDeviceIdInitialized();
+          const taskPromise = message.type === 'getUncompletedTasks' ? getUncompletedTasks(deviceId) : getCompletedTasks(deviceId);
+          taskPromise.then(resp => {
+            const tasks = resp?.tasks ? resp.tasks : [];
+            const res = tasks.map(task => (
+              {
+                file_name: task.name,
+                name: task.name,
+                file_size: parseInt(task.file_size),
+                updated_time: task.updated_time,
+                progress: task.progress || 0,
+                real_path: task.params?.real_path || '',
+                speed: parseInt(task.params?.speed || 0),
+                created_time: task.created_time,
+                origin: task
+              }
+            ));
+            sendResponse(res);
+          }).catch(error => {
+            sendResponse({ error: error.message, tasks: [] });
+          });
+        } catch (error) {
+          sendResponse({ error: error.message, tasks: [] });
+        }
+      })();
+      return true;
   }
 
   if (message.type === 'getFileTree') {
@@ -119,6 +134,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'submitTask') {
     const handleSubmitTask = async () => {
       try {
+        await ensureDeviceIdInitialized();
         const task = message.task;
         if (!task || !task.magnetic_link || !task.selected_files) {
           throw new Error('无效任务');
