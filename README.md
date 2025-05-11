@@ -49,15 +49,6 @@
    - 点击扩展图标查看任务列表
    - 显示下载进度、速度等信息
 
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request！
-
-1. Fork本项目
-2. 创建分支 (`git checkout -b feature/your-feature`)
-3. 提交更改 (`git commit -am 'Add some feature'`)
-4. 推送分支 (`git push origin feature/your-feature`)
-5. 创建Pull Request
 
 ## 📜 许可证
 
