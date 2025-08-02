@@ -103,6 +103,10 @@ async function showFileSelection(files, magneticLink) {
       } else {
         label.textContent = file.name;
       }
+      label.addEventListener('click', (e) => {
+        e.stopPropagation();
+        checkbox.checked = !checkbox.checked;
+      });
       
       li.appendChild(checkbox);
       li.appendChild(label);
