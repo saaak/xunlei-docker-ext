@@ -3,6 +3,7 @@ const taskPage = document.getElementById('taskPage');
 const configForm = document.getElementById('configForm');
 const dockerHostInput = document.getElementById('dockerHost');
 const dockerPortInput = document.getElementById('dockerPort');
+const defaultFileTypeInput = document.getElementById('defaultFileType');
 const taskList = document.getElementById('taskList');
 const configButton = document.getElementById('configButton');
 const uncompletedTab = document.getElementById('uncompletedTab');
@@ -10,7 +11,7 @@ const completedTab = document.getElementById('completedTab');
 let currentTab = 'uncompleted';
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+  const config = await chrome.storage.sync.get(['host', 'port', 'ssl', 'defaultFileType']);
   if (config.host && config.port) {
     showTaskPage();
     await refreshTaskList();
@@ -40,6 +41,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function showConfigPage() {
+  chrome.storage.sync.get(['host', 'port', 'ssl', 'defaultFileType']).then((config) => {
+    dockerHostInput.value = config.host || '';
+    dockerPortInput.value = config.port || '';
+    defaultFileTypeInput.value = config.defaultFileType || '';
+  });
   configPage.style.display = 'block';
   taskPage.style.display = 'none';
 }
@@ -54,7 +60,8 @@ configForm.addEventListener('submit', (e) => {
   
   const config = {
     host: dockerHostInput.value,
-    port: dockerPortInput.value
+    port: dockerPortInput.value,
+    defaultFileType: defaultFileTypeInput.value
   };
   
   chrome.runtime.sendMessage(

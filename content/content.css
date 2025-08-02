@@ -57,6 +57,10 @@
   margin: 0;
 }
 
+.xunlei-file-selector li > ul {
+  padding-left: 20px;
+}
+
 .xunlei-file-selector li {
   padding: 8px 0;
   border-bottom: 1px solid #eee;
@@ -70,6 +74,12 @@
 .xunlei-file-selector .directory {
   font-weight: bold;
   color: #333;
+}
+
+.xunlei-file-selector .directory-hint {
+  font-weight: normal;
+  color: #666;
+  font-size: 0.9em;
 }
 
 .xunlei-buttons {

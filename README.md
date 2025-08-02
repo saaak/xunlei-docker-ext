@@ -4,7 +4,7 @@
 
 一款便捷的Chrome扩展，简化与Docker迅雷下载服务（[cnk3x/xunlei](https://github.com/cnk3x/xunlei)）的交互。
 
-![扩展截图](assets/screenshot.png) <!-- 建议添加实际截图 -->
+![扩展截图](assets/screenshot.png)
 
 ## ✨ 功能特性
 
@@ -17,7 +17,7 @@
 ## 📦 安装
 
 ### 前提条件
-- 已部署Docker迅雷服务（推荐使用[cnk3x/xunlei](https://github.com/cnk3x/xunlei)）
+- 已部署Docker迅雷服务（[cnk3x/xunlei](https://github.com/cnk3x/xunlei)）
 - Docker迅雷容器网络可访问
 
 ### 安装步骤

@@ -1,4 +1,12 @@
-import { getDeviceId, getUncompletedTasks, extractFileList, createFolder, submitTask, getCompletedTasks, getParentFolderId } from './utils/api.js';
+import {
+  getDeviceId,
+  getUncompletedTasks,
+  extractFileList,
+  createFolder,
+  submitTask,
+  getCompletedTasks,
+  getParentFolderId
+} from './utils/api.js';
 import { parseDeviceId } from './utils/util.js';
 let deviceId = null;
 let parentFolderId = null;
@@ -60,7 +68,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.sync.set({
         host: config.host,
         port: config.port,
-        ssl: config.ssl || false
+        ssl: config.ssl || false,
+        defaultFileType: config.defaultFileType || ''
       }, () => {
         sendResponse({ success: true });
       });

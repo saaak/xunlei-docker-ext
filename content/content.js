@@ -27,7 +27,7 @@ function detectMagnetLinks() {
             }
           });
         } catch (error) {
-          alert('提交任务失败: ' + error.message);
+          alert('提交任务失败: 请检查迅雷服务是否正常运行');
         }
       });
     }
@@ -35,7 +35,7 @@ function detectMagnetLinks() {
 }
 
 // 显示文件选择界面
-function showFileSelection(files, magneticLink) {
+async function showFileSelection(files, magneticLink) {
   const container = document.createElement('div');
   container.className = 'xunlei-file-selector';
   
@@ -56,21 +56,52 @@ function showFileSelection(files, magneticLink) {
   taskNameContainer.appendChild(taskNameInput);
   container.appendChild(taskNameContainer);
   
+  const defaultFileType = await getDefaultFileType();
   function createFileTree(files, parent) {
+
     const ul = document.createElement('ul');
     files.forEach(file => {
       const li = document.createElement('li');
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = true;
+      checkbox.checked = defaultFileType.includes(file.name.split('.').pop());
       checkbox.dataset.fileIndex = file.file_index;
       checkbox.dataset.fileSize = file.file_size;
       checkbox.dataset.fileName = file.name;
       
-      const label = document.createElement('label');
-      label.textContent = file.name;
       if (file.isDirectory) {
+        checkbox.addEventListener('change', (e) => {
+          const checked = e.target.checked;
+          const childCheckboxes = li.querySelectorAll('input[type="checkbox"]');
+          childCheckboxes.forEach(childBox => {
+            childBox.checked = checked;
+          });
+        });
+      } else {
+        checkbox.addEventListener('change', () => {
+          let parentLi = li.parentElement.closest('li');
+          while (parentLi) {
+            const parentCheckbox = parentLi.querySelector(':scope > input[type="checkbox"]');
+            const childCheckboxes = parentLi.querySelectorAll(':scope > ul > li > input[type="checkbox"]');
+            const allChecked = Array.from(childCheckboxes).every(box => box.checked);
+            const anyOneUnchecked = Array.from(childCheckboxes).some(box => !box.checked);
+            if (allChecked) {
+              parentCheckbox.checked = true;
+            } else if (anyOneUnchecked) {
+              parentCheckbox.checked = false;
+            }
+            
+            parentLi = parentLi.parentElement.closest('li');
+          }
+        });
+      }
+      
+      const label = document.createElement('label');
+      if (file.isDirectory) {
+        label.innerHTML = `${file.name} <span class="directory-hint">(选择将全选子文件)</span>`;
         label.className = 'directory';
+      } else {
+        label.textContent = file.name;
       }
       
       li.appendChild(checkbox);
@@ -142,3 +173,12 @@ observer.observe(document.body, {
   childList: true,
   subtree: true
 });
+
+
+async function getDefaultFileType() {
+  let defaultFileType = await chrome.storage.sync.get(['defaultFileType']);
+  if (defaultFileType.defaultFileType) {
+    return defaultFileType.defaultFileType.split(',').map(type => type.trim());
+  }
+  return [];
+}
