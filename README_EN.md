@@ -68,11 +68,11 @@ Simplify interaction with Docker Xunlei download service ([cnk3x/xunlei](https:/
 - [x] File selection
 - [x] Task submission
 - [x] Configure default file types
+- [x] Download completion notifications - System notifications when tasks complete
 
 ### 🚧 Planned Features
 - [ ] Support for more download link types
 - [ ] Custom download link rules
-- [ ] Download completion notifications
 - [ ] Internationalization support
 
 ## 👥 Contribution Guidelines
