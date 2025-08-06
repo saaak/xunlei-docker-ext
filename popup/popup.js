@@ -14,6 +14,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const config = await chrome.storage.sync.get(['host', 'port', 'ssl', 'defaultFileType']);
   if (config.host && config.port) {
     showTaskPage();
+    
+    // 检查是否需要显示已完成任务标签
+    const showCompletedTabData = await chrome.storage.local.get(['showCompletedTab']);
+    if (showCompletedTabData.showCompletedTab) {
+      // 切换到已完成任务标签
+      currentTab = 'completed';
+      completedTab.classList.add('active');
+      uncompletedTab.classList.remove('active');
+      
+      // 清除标记，避免下次打开仍然自动切换
+      chrome.storage.local.remove(['showCompletedTab']);
+    }
+    
     await refreshTaskList();
     setInterval(refreshTaskList, 5000);
   } else {

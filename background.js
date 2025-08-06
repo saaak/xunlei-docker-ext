@@ -10,6 +10,46 @@ import {
 import { parseDeviceId } from './utils/util.js';
 let deviceId = null;
 let parentFolderId = null;
+let lastUncompletedTaskIds = new Set(); // 存储上次检查时未完成的任务ID
+let lastUncompletedTaskMap = new Map(); // 存储上次检查时未完成的任务
+
+// 检查任务完成状态并发送通知
+async function checkTasksCompletion() {
+  try {
+    if (!deviceId) return;
+
+    // 获取未完成的任务
+    const uncompletedTasksResponse = await getUncompletedTasks(deviceId);
+    const uncompletedTasks = uncompletedTasksResponse?.tasks || [];
+    const uncompletedTaskIds = new Set(uncompletedTasks.map(task => task.id));
+    const newCompletedTaskIds = new Set([...lastUncompletedTaskIds].filter(id => !uncompletedTaskIds.has(id)));
+
+    // 检查是否有新完成的任务
+    for (const taskId of newCompletedTaskIds) {
+      const task = lastUncompletedTaskMap.get(taskId);
+      // 发送通知
+      chrome.notifications.create(taskId, {
+        type: 'basic',
+        iconUrl: 'assets/icon128.png',
+        title: '下载任务完成',
+        message: `任务「${task.name}」已下载完成`,
+        priority: 2
+      });
+      // 移除已完成的任务
+      lastUncompletedTaskMap.delete(taskId);
+
+    }
+    // 存储新完成的任务
+    for (const task of uncompletedTasks) {
+      lastUncompletedTaskMap.set(task.id, task);
+    }
+    // 更新未完成任务ID记录
+    lastUncompletedTaskIds = uncompletedTaskIds;
+    
+  } catch (error) {
+    console.error('检查任务完成状态失败:', error);
+  }
+}
 
 // 初始化deviceId
 async function initDeviceId() {
@@ -40,6 +80,39 @@ async function ensureDeviceIdInitialized() {
     throw new Error('无法初始化 deviceId。请检查配置或网络连接。');
   }
 }
+
+// 定期检查任务完成状态
+function startTaskCompletionCheck() {
+  // 立即执行一次检查
+  checkTasksCompletion();
+  // 每30秒检查一次任务完成状态
+  setInterval(checkTasksCompletion, 30000);
+}
+
+// 扩展初始化
+async function initExtension() {
+  try {
+    const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+    
+    if (config.host && config.port) {
+      await initDeviceId();
+      // 启动任务完成检查
+      startTaskCompletionCheck();
+    }
+  } catch (error) {
+    console.error('扩展初始化失败:', error);
+  }
+}
+
+// 扩展安装或启动时初始化
+chrome.runtime.onInstalled.addListener(() => {
+  initExtension();
+});
+
+// 浏览器启动时初始化
+chrome.runtime.onStartup.addListener(() => {
+  initExtension();
+});
 
 // 扩展图标点击事件
 chrome.action.onClicked.addListener(async () => {
