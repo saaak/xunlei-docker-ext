@@ -150,8 +150,14 @@ async function showFileSelection(files, magneticLink) {
         task_name: taskName
       }
     }).then(response => {
+      if (response.success) {
+        alert('任务已提交');
+      } else {
+        alert('提交任务失败: ' + response.error);
+      }
       container.remove();
-      alert('任务已提交');
+    }).catch(error => {
+      alert('提交任务失败: ' + error.message);
     });
   });
   
