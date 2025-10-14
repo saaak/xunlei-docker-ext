@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>磁力链接识别测试页</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; padding: 20px; }
+    h1 { margin-bottom: 8px; }
+    .section { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+    .label { font-weight: 600; color: #444; margin-bottom: 6px; }
+    code { background: #f5f5f5; padding: 2px 4px; border-radius: 4px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .box { flex: 1 1 320px; min-width: 280px; }
+    .muted { color: #666; font-size: 12px; }
+    img { max-width: 100px; }
+  </style>
+</head>
+<body>
+  <h1>磁力链接识别测试页</h1>
+  <p class="muted">用于验证扩展的 content script 能否在各种标签和内容中识别并处理 <code>magnet:</code> 链接。</p>
+
+  <div class="section">
+    <div class="label">1) a 标签中的 href</div>
+    <div class="row">
+      <div class="box">
+        <a href="magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Example+File&tr=udp://tracker.openbittorrent.com:80/announce">示例磁力链接 A</a>
+      </div>
+      <div class="box">
+        <a href="magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678">示例磁力链接 B</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">2) 普通文本节点中的链接</div>
+    <p>这是段落文本，其中包含磁力链接：
+      magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&dn=Movie+Sample
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="label">3) 嵌套标签中的文本</div>
+    <div>
+      <span>前缀文本</span>
+      <span>
+        这里也有一个磁力链接：magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&tr=udp://tracker.example.com:80
+      </span>
+      <span>后缀文本</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">4) 各类属性中的链接（value/title/placeholder/data-*）</div>
+    <div class="row">
+      <div class="box">
+        <input type="text" style="width:100%" value="magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc&dn=InputValue" />
+        <div class="muted">input 的 value 属性</div>
+      </div>
+      <div class="box">
+        <input type="text" style="width:100%" placeholder="magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd" />
+        <div class="muted">input 的 placeholder 属性</div>
+      </div>
+      <div class="box">
+        <div title="magnet:?xt=urn:btih:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee">悬浮查看 title</div>
+        <div class="muted">div 的 title 属性</div>
+      </div>
+      <div class="box">
+        <div data-magnet="magnet:?xt=urn:btih:ffffffffffffffffffffffffffffffffffffffff&dn=DataMagnet" data-link="magnet:?xt=urn:btih:9999999999999999999999999999999999999999">data-* 属性</div>
+        <div class="muted">div 的 data-magnet / data-link 属性</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="label">5) 图片 alt 属性中的链接</div>
+    <img src="assets/icon128.png" alt="magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" />
+    <div class="muted">img 的 alt 属性（不常见但也测试）</div>
+  </div>
+
+  <div class="section">
+    <div class="label">6) textarea 中的文本</div>
+    <textarea rows="3" style="width:100%">magnet:?xt=urn:btih:1212121212121212121212121212121212121212&dn=TextareaSample</textarea>
+  </div>
+
+  <div class="section">
+    <div class="label">7) 隐藏元素中的文本（仍应被检测）</div>
+    <div style="display:none">magnet:?xt=urn:btih:1313131313131313131313131313131313131313&dn=HiddenText</div>
+  </div>
+
+  <div class="section">
+    <div class="label">8) 动态插入的内容（MutationObserver 测试）</div>
+    <div id="dynamic"></div>
+    <script>
+      // 2 秒后插入包含磁力链接的文本和属性
+      setTimeout(() => {
+        const wrap = document.createElement('div');
+        wrap.className = 'dynamic-wrap';
+        wrap.setAttribute('data-url', 'magnet:?xt=urn:btih:1414141414141414141414141414141414141414&dn=DynamicData');
+        wrap.innerText = '动态文本中的链接：magnet:?xt=urn:btih:1515151515151515151515151515151515151515&tr=udp://tracker.dynamic.com:80';
+        document.getElementById('dynamic').appendChild(wrap);
+      }, 2000);
+    </script>
+  </div>
+
+  <div class="section">
+    <div class="label">9) 较长的磁力链接（截断显示测试）</div>
+    <p>
+      magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&dn=Very+Long+File+Name+With+Multiple+Words+And+Unicode+字符&tr=udp://tracker.openbittorrent.com:80/announce&tr=udp://tracker.opentrackr.org:1337/announce
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="label">10) 复合场景</div>
+    <div data-link="magnet:?xt=urn:btih:1616161616161616161616161616161616161616">
+      <span>段落前缀</span>
+      <a href="magnet:?xt=urn:btih:1717171717171717171717171717171717171717">链接内</a>
+      <span>段落后缀，包含文本磁力：magnet:?xt=urn:btih:1818181818181818181818181818181818181818</span>
+    </div>
+  </div>
+
+  <hr />
+  <p class="muted">提示：请在浏览器中打开此页面，确保扩展已安装并启用。页面加载后以及 2 秒后（动态内容插入）都应看到扩展添加的“Docker迅雷下载”按钮。</p>
+</body>
+</html>
