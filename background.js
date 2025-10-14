@@ -247,7 +247,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         };
         
-        await submitTask(submitBody);
+        const res = await submitTask(submitBody);
+
+        if (res?.HttpStatus !== 0) {
+          return { success: false, error: res?.error_description || '提交失败' };
+        }
+
         return { success: true };
       } catch (error) {
         console.error('Failed to submit task:', error);
@@ -255,7 +260,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     };
 
-    handleSubmitTask().then(sendResponse);
+    handleSubmitTask().then(res => {
+      sendResponse(res);
+    });
     return true;
   }
   

@@ -194,11 +194,6 @@ async function request({ method = 'GET', url, data = {} }) {
 
   const response = await fetch(fullUrl, requestOptions);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`API 请求错误: ${response.status} - ${response.statusText}`, errorText);
-    throw new Error(`API 错误: ${response.status} - ${errorText}`);
-  }
   try {
     return await response.json();
   } catch (e) {

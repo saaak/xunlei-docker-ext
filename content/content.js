@@ -1,35 +1,160 @@
 // 检测页面中的magnet链接
 function detectMagnetLinks() {
+  // 1. 检测a标签中的magnet链接
   const links = document.querySelectorAll('a[href^="magnet:"]');
   
   links.forEach(link => {
     if (!link.dataset.xunleiProcessed) {
-      const button = document.createElement('button');
-      button.className = 'xunlei-download-btn';
-      button.textContent = 'Docker迅雷下载';
-      
-      link.parentNode.insertBefore(button, link.nextSibling);
-      
-      link.dataset.xunleiProcessed = true;
-      
-      button.addEventListener('click', async (e) => {
-        e.preventDefault();
+      addDownloadButton(link, link.href, link);
+    }
+  });
+  
+  // 2. 检测页面中所有元素的magnet链接
+  const magnetRegex = /magnet:\?[^\s<>"']+/gi;
+  
+  // 检测文本节点中的magnet链接
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        // 跳过已处理的节点和脚本、样式标签
+        if (node.parentElement.dataset.xunleiProcessed || 
+            ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(node.parentElement.tagName)) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+  
+  const textNodes = [];
+  let node;
+  while (node = walker.nextNode()) {
+    if (magnetRegex.test(node.textContent)) {
+      textNodes.push(node);
+    }
+  }
+  
+  textNodes.forEach(textNode => {
+    const matches = textNode.textContent.match(magnetRegex);
+    if (matches && !textNode.parentElement.dataset.xunleiProcessed) {
+      matches.forEach(magnetLink => {
+        // 为每个magnet链接创建一个包装元素
+        const wrapper = document.createElement('span');
+        wrapper.style.cssText = 'display: inline-block; margin: 0 5px; position: relative;';
         
-        try {
-          chrome.runtime.sendMessage({
-            type: 'getFileTree',
-            magnetic_link: link.href
-          }).then(files => {
-            if (files.length > 0) {
-              showFileSelection(files, link.href);
-            } else {
-              alert('未找到可下载的文件');
+        const linkText = document.createElement('code');
+        linkText.textContent = magnetLink.substring(0, 50) + (magnetLink.length > 50 ? '...' : '');
+        linkText.style.cssText = 'background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-size: 12px;';
+        
+        wrapper.appendChild(linkText);
+        
+        // 替换原文本中的magnet链接
+        const newContent = textNode.textContent.replace(magnetLink, '');
+        textNode.textContent = newContent;
+        
+        // 插入包装元素
+        textNode.parentElement.insertBefore(wrapper, textNode.nextSibling);
+        
+        addDownloadButton(wrapper, magnetLink, wrapper);
+      });
+      
+      textNode.parentElement.dataset.xunleiProcessed = true;
+    }
+  });
+  
+  // 3. 检测其他标签的属性中的magnet链接
+  const allElements = document.querySelectorAll('*:not(script):not(style):not(noscript)');
+  
+  allElements.forEach(element => {
+    if (element.dataset.xunleiProcessed) return;
+    
+    const magnetLinks = [];
+    
+    // 检查常见属性
+    const attributesToCheck = ['value', 'title', 'alt', 'placeholder', 'data-url', 'data-link', 'data-magnet'];
+    
+    attributesToCheck.forEach(attr => {
+      const attrValue = element.getAttribute(attr);
+      if (attrValue && magnetRegex.test(attrValue)) {
+        const matches = attrValue.match(magnetRegex);
+        if (matches) {
+          matches.forEach(match => {
+            if (!magnetLinks.includes(match)) {
+              magnetLinks.push(match);
             }
           });
-        } catch (error) {
-          alert('提交任务失败: 请检查迅雷服务是否正常运行');
+        }
+      }
+    });
+    
+    // 检查所有data-*属性
+    Array.from(element.attributes).forEach(attr => {
+      if (attr.name.startsWith('data-') && magnetRegex.test(attr.value)) {
+        const matches = attr.value.match(magnetRegex);
+        if (matches) {
+          matches.forEach(match => {
+            if (!magnetLinks.includes(match)) {
+              magnetLinks.push(match);
+            }
+          });
+        }
+      }
+    });
+    
+    // 为找到的magnet链接添加下载按钮
+    if (magnetLinks.length > 0) {
+      magnetLinks.forEach(magnetLink => {
+        // 创建显示元素
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display: inline-block; margin: 2px; padding: 5px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;';
+        
+        const linkText = document.createElement('code');
+        linkText.textContent = `[${element.tagName.toLowerCase()}] ${magnetLink.substring(0, 40)}${magnetLink.length > 40 ? '...' : ''}`;
+        linkText.style.cssText = 'background: #e8e8e8; padding: 2px 4px; border-radius: 3px; font-size: 11px; display: block; margin-bottom: 3px;';
+        
+        wrapper.appendChild(linkText);
+        
+        // 插入到元素后面
+        element.parentNode.insertBefore(wrapper, element.nextSibling);
+        
+        addDownloadButton(wrapper, magnetLink, wrapper);
+      });
+      
+      element.dataset.xunleiProcessed = true;
+    }
+  });
+}
+
+// 添加下载按钮的通用函数
+function addDownloadButton(targetElement, magnetLink, insertAfter) {
+  if (targetElement.dataset.xunleiProcessed) return;
+  
+  const button = document.createElement('button');
+  button.className = 'xunlei-download-btn';
+  button.textContent = 'Docker迅雷下载';
+  
+  insertAfter.parentNode.insertBefore(button, insertAfter.nextSibling);
+  
+  targetElement.dataset.xunleiProcessed = true;
+  
+  button.addEventListener('click', async (e) => {
+    e.preventDefault();
+    
+    try {
+      chrome.runtime.sendMessage({
+        type: 'getFileTree',
+        magnetic_link: magnetLink
+      }).then(files => {
+        if (files.length > 0) {
+          showFileSelection(files, magnetLink);
+        } else {
+          alert('未找到可下载的文件');
         }
       });
+    } catch (error) {
+      alert('提交任务失败: 请检查迅雷服务是否正常运行');
     }
   });
 }
@@ -150,8 +275,14 @@ async function showFileSelection(files, magneticLink) {
         task_name: taskName
       }
     }).then(response => {
+      if (response.success) {
+        alert('任务已提交');
+      } else {
+        alert('提交任务失败: ' + response.error);
+      }
       container.remove();
-      alert('任务已提交');
+    }).catch(error => {
+      alert('提交任务失败: ' + error.message);
     });
   });
   
