@@ -1,4 +1,12 @@
 import SparkMD5 from '../libs/md5.min.js';
+import { 
+  PLATFORM_DOCKER, 
+  PLATFORM_FNOS, 
+  PREFIX_DOCKER, 
+  PREFIX_FNOS,
+  URL_SERVER_VERSION,
+  URL_HIGH_VERSION_AUTH 
+} from './constants.js';
 
 const SERVER_VERSION_CACHE_KEY = 'xunleiCachedServerVersion';
 const SERVER_VERSION_TIMESTAMP_KEY = 'xunleiServerVersionCacheTime';
@@ -11,6 +19,15 @@ let highVersionTokenCacheTime = 0;
 
 function hex_md5(input) {
   return SparkMD5.hash(input);
+}
+
+/**
+ * 根据平台配置获取 URL 前缀。
+ * @param {string} platform - 平台类型 ('docker' | 'fnos')。
+ * @returns {string} URL 前缀。
+ */
+function getPathPrefix(platform) {
+  return platform === PLATFORM_FNOS ? PREFIX_FNOS : PREFIX_DOCKER;
 }
 
 /**
@@ -27,9 +44,10 @@ function buildBaseUrl(config) {
  * 获取迅雷服务器的版本号。
  * 会优先从本地缓存读取，缓存过期或不存在时再从网络获取。
  * @param {string} baseUrl - 迅雷服务的基础 URL。
+ * @param {string} platform - 平台类型。
  * @returns {Promise<string|null>} 服务器版本号字符串，如果获取失败则返回 null。
  */
-async function fetchXunleiServerVersion(baseUrl) {
+async function fetchXunleiServerVersion(baseUrl, platform) {
   try {
     const cachedData = await chrome.storage.local.get([SERVER_VERSION_CACHE_KEY, SERVER_VERSION_TIMESTAMP_KEY]);
     const cachedVersion = cachedData[SERVER_VERSION_CACHE_KEY];
@@ -43,7 +61,8 @@ async function fetchXunleiServerVersion(baseUrl) {
   }
 
   try {
-    const statusUrl = `${baseUrl}/webman/3rdparty/pan-xunlei-com/index.cgi/launcher/status`;
+    const prefix = getPathPrefix(platform);
+    const statusUrl = `${baseUrl}${prefix}${URL_SERVER_VERSION}`;
     const response = await fetch(statusUrl);
     if (!response.ok) {
       console.error('获取迅雷版本失败 (网络):', response.status, await response.text());
@@ -92,15 +111,17 @@ function isVersionAtLeast(currentVersion, targetVersion) {
  * 为高版本迅雷 (>=3.21.0) 生成 pan-auth token。
  * 该 token 从首页 HTML 中提取，并进行内存缓存。
  * @param {string} baseUrl - 迅雷服务的基础 URL。
+ * @param {string} platform - 平台类型。
  * @returns {Promise<string|null>} pan-auth token，如果获取失败则返回 null。
  */
-async function generatePanAuthForHighVersion(baseUrl) {
+async function generatePanAuthForHighVersion(baseUrl, platform) {
   if (cachedHighVersionToken && (Date.now() - highVersionTokenCacheTime < HIGH_VERSION_TOKEN_CACHE_DURATION)) {
     return cachedHighVersionToken;
   }
 
   try {
-    const indexUrl = `${baseUrl}/webman/3rdparty/pan-xunlei-com/index.cgi/`;
+    const prefix = getPathPrefix(platform);
+    const indexUrl = `${baseUrl}${prefix}${URL_HIGH_VERSION_AUTH}`;
     const response = await fetch(indexUrl);
     if (!response.ok) {
       console.error('高版本 token：获取首页失败:', response.status, await response.text());
@@ -136,13 +157,14 @@ function generatePanAuthForLowVersion() {
 /**
  * 动态生成 pan-auth token。
  * @param {string} baseUrl - 迅雷服务的基础 URL。
+ * @param {string} platform - 平台类型。
  * @returns {Promise<string|null>} pan-auth token，如果生成失败则返回 null。
  */
-async function generatePanAuth(baseUrl) {
-  const serverVersion = await fetchXunleiServerVersion(baseUrl); // 现在会尝试从缓存读取
+async function generatePanAuth(baseUrl, platform) {
+  const serverVersion = await fetchXunleiServerVersion(baseUrl, platform); // 现在会尝试从缓存读取
 
   if (serverVersion && isVersionAtLeast(serverVersion, "3.21.0")) {
-    const token = await generatePanAuthForHighVersion(baseUrl);
+    const token = await generatePanAuthForHighVersion(baseUrl, platform);
     if (token) {
       return token;
     }
@@ -164,13 +186,15 @@ async function generatePanAuth(baseUrl) {
  * @returns {Promise<object>} 解析后的 JSON 响应数据。
  */
 async function request({ method = 'GET', url, data = {} }) {
-  const config = await chrome.storage.sync.get(['host', 'port', 'ssl']);
+  const config = await chrome.storage.sync.get(['host', 'port', 'ssl', 'platform']);
   if (!config.host || !config.port) {
     throw new Error('迅雷 Docker 配置未找到 (host 或 port 缺失)。请先在插件设置中配置。');
   }
+  
+  const platform = config.platform || PLATFORM_DOCKER; // 默认为 Docker
   const baseUrl = buildBaseUrl(config);
 
-  const panAuth = await generatePanAuth(baseUrl);
+  const panAuth = await generatePanAuth(baseUrl, platform);
   if (!panAuth) {
     throw new Error('无法生成 pan-auth token。');
   }
@@ -186,7 +210,9 @@ async function request({ method = 'GET', url, data = {} }) {
   };
 
   const requestOptions = { method, headers };
-  const fullUrl = baseUrl + url;
+  
+  const prefix = getPathPrefix(platform);
+  const fullUrl = baseUrl + prefix + url;
 
   if (method === 'POST') {
     requestOptions.body = JSON.stringify(data);
@@ -224,4 +250,22 @@ async function post(url, data = {}) {
   return request({ method: 'POST', url, data });
 }
 
-export { get, post };
+/**
+ * 清除认证相关的缓存（包括 token 和服务器版本）。
+ * 用于在配置变更时强制刷新认证信息。
+ */
+async function clearAuthCache() {
+  // 清除内存缓存
+  cachedHighVersionToken = null;
+  highVersionTokenCacheTime = 0;
+  
+  // 清除本地存储的版本缓存
+  try {
+    await chrome.storage.local.remove([SERVER_VERSION_CACHE_KEY, SERVER_VERSION_TIMESTAMP_KEY]);
+    console.log('认证缓存已清除');
+  } catch (e) {
+    console.error('清除认证缓存失败:', e);
+  }
+}
+
+export { get, post, clearAuthCache };

@@ -11,10 +11,17 @@
       <h1>配置</h1>
       <form id="configForm">
         <div class="form-group">
+          <label for="platform">平台:</label>
+          <select id="platform">
+            <option value="docker">Docker</option>
+            <option value="fnos">飞牛原生</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label for="dockerHost">Host:</label>
           <input type="text" id="dockerHost" required>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="portGroup">
           <label for="dockerPort">Port:</label>
           <input type="number" id="dockerPort" required>
         </div>
