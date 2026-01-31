@@ -1,7 +1,9 @@
 const configPage = document.getElementById('configPage');
 const taskPage = document.getElementById('taskPage');
 const configForm = document.getElementById('configForm');
+const platformSelect = document.getElementById('platform');
 const dockerHostInput = document.getElementById('dockerHost');
+const portGroup = document.getElementById('portGroup');
 const dockerPortInput = document.getElementById('dockerPort');
 const defaultFileTypeInput = document.getElementById('defaultFileType');
 const taskList = document.getElementById('taskList');
@@ -53,15 +55,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
+function updatePortVisibility() {
+  if (platformSelect.value === 'fnos') {
+    portGroup.style.display = 'none';
+    dockerPortInput.value = '5666'; // 默认端口
+  } else {
+    portGroup.style.display = 'block';
+  }
+}
+
 function showConfigPage() {
-  chrome.storage.sync.get(['host', 'port', 'ssl', 'defaultFileType']).then((config) => {
+  chrome.storage.sync.get(['host', 'port', 'ssl', 'defaultFileType', 'platform']).then((config) => {
+    platformSelect.value = config.platform || 'docker';
     dockerHostInput.value = config.host || '';
     dockerPortInput.value = config.port || '';
     defaultFileTypeInput.value = config.defaultFileType || '';
+    updatePortVisibility();
   });
   configPage.style.display = 'block';
   taskPage.style.display = 'none';
 }
+
+platformSelect.addEventListener('change', updatePortVisibility);
 
 function showTaskPage() {
   configPage.style.display = 'none';
@@ -72,6 +87,7 @@ configForm.addEventListener('submit', (e) => {
   e.preventDefault();
   
   const config = {
+    platform: platformSelect.value,
     host: dockerHostInput.value,
     port: dockerPortInput.value,
     defaultFileType: defaultFileTypeInput.value

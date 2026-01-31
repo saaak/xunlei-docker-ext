@@ -8,6 +8,7 @@ import {
   getParentFolderId
 } from './utils/api.js';
 import { parseDeviceId } from './utils/util.js';
+import { clearAuthCache } from './utils/request.js';
 let deviceId = null;
 let parentFolderId = null;
 let lastUncompletedTaskIds = new Set(); // 存储上次检查时未完成的任务ID
@@ -142,9 +143,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         host: config.host,
         port: config.port,
         ssl: config.ssl || false,
+        platform: config.platform || 'docker',
         defaultFileType: config.defaultFileType || ''
-      }, () => {
-        sendResponse({ success: true });
+      }, async () => {
+        try {
+          // 清除认证缓存和状态
+          await clearAuthCache();
+          await chrome.storage.local.remove('deviceId');
+          deviceId = null;
+          parentFolderId = null;
+          
+          // 重新初始化
+          await initDeviceId();
+          console.log('配置更新并刷新认证信息完成');
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error('刷新认证信息失败:', error);
+          sendResponse({ success: true }); // 依然返回成功，因为配置已保存
+        }
       });
       return true;
     } else {
