@@ -30,6 +30,11 @@
             <input type="password" id="remotePassword" placeholder="请输入迅雷密码" required autocomplete="current-password">
           </div>
           <div class="form-group">
+            <label for="remoteDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="remoteDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
+          </div>
+          <div class="form-group">
             <label for="remoteDefaultFileType">默认文件类型:</label>
             <input type="text" id="remoteDefaultFileType" placeholder="逗号分割：mp4,mkv,avi，留空全选">
           </div>
@@ -66,6 +71,12 @@
           </div>
 
           <div class="form-group">
+            <label for="remoteLoggedInDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="remoteLoggedInDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
+          </div>
+
+          <div class="form-group">
             <label for="remoteLoggedInFileType">默认文件类型:</label>
             <input type="text" id="remoteLoggedInFileType" placeholder="逗号分割：mp4,mkv,avi，留空全选">
           </div>
@@ -91,6 +102,11 @@
           <div class="form-group" id="portGroup">
             <label for="dockerPort">端口:</label>
             <input type="number" id="dockerPort" placeholder="2345" required>
+          </div>
+          <div class="form-group">
+            <label for="localDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="localDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
           </div>
           <div class="form-group">
             <label for="defaultFileType">默认文件类型:</label>

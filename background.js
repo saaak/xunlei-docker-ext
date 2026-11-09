@@ -174,6 +174,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     const toSync = {
       mode,
+      defaultDownloadDir: config.defaultDownloadDir !== undefined ? config.defaultDownloadDir : '',
       defaultFileType: config.defaultFileType || ''
     };
 
@@ -293,6 +294,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error('无效任务参数');
         }
 
+        // 自动检查并补齐默认下载目录
+        const finalTaskFiles = task.selected_files;
+        let taskName = task.task_name || finalTaskFiles[0]?.file_name || '下载任务';
+        let downloadDir = (task.download_dir || '').trim();
+
+        if (!downloadDir && !taskName.startsWith('/')) {
+          const syncConfig = await chrome.storage.sync.get(['defaultDownloadDir']);
+          downloadDir = (syncConfig.defaultDownloadDir || '').trim();
+        }
+
+        if (downloadDir) {
+          if (!downloadDir.startsWith('/')) downloadDir = '/' + downloadDir;
+          if (!downloadDir.endsWith('/')) downloadDir = downloadDir + '/';
+          if (!taskName.startsWith(downloadDir)) {
+            taskName = `${downloadDir}${taskName.replace(/^\/+/, '')}`;
+          }
+        }
+
+        task.task_name = taskName;
+        task.download_dir = downloadDir;
+
         // 远程模式下发
         if (mode === MODE_REMOTE) {
           const res = await xlCloud.submitTask(task);
@@ -301,8 +323,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         // 本地模式下发
         await ensureLocalDeviceIdInitialized();
-        const finalTaskFiles = task.selected_files;
-        const taskName = task.task_name || finalTaskFiles[0]?.file_name || '下载任务';
         const taskFileCount = finalTaskFiles.length;
 
         if (!localParentFolderId) {

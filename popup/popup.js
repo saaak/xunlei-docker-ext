@@ -16,6 +16,7 @@ const remoteLoginForm = document.getElementById('remoteLoginForm');
 const remoteLoggedInView = document.getElementById('remoteLoggedInView');
 const remoteUsernameInput = document.getElementById('remoteUsername');
 const remotePasswordInput = document.getElementById('remotePassword');
+const remoteDefaultDownloadDir = document.getElementById('remoteDefaultDownloadDir');
 const remoteDefaultFileType = document.getElementById('remoteDefaultFileType');
 const remoteLoginBtn = document.getElementById('remoteLoginBtn');
 
@@ -30,6 +31,7 @@ const remoteCheckSmsBtn = document.getElementById('remoteCheckSmsBtn');
 const remoteUserDisplay = document.getElementById('remoteUserDisplay');
 const remoteLogoutBtn = document.getElementById('remoteLogoutBtn');
 const remoteDeviceSelect = document.getElementById('remoteDeviceSelect');
+const remoteLoggedInDefaultDownloadDir = document.getElementById('remoteLoggedInDefaultDownloadDir');
 const remoteLoggedInFileType = document.getElementById('remoteLoggedInFileType');
 const remoteSaveBtn = document.getElementById('remoteSaveBtn');
 
@@ -39,6 +41,7 @@ const platformSelect = document.getElementById('platform');
 const dockerHostInput = document.getElementById('dockerHost');
 const portGroup = document.getElementById('portGroup');
 const dockerPortInput = document.getElementById('dockerPort');
+const localDefaultDownloadDir = document.getElementById('localDefaultDownloadDir');
 const defaultFileTypeInput = document.getElementById('defaultFileType');
 
 // 任务页面元素
@@ -56,7 +59,7 @@ let smsCountdownTimer = null;
 // -------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port', 'platform', 'defaultFileType']);
+  const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port', 'platform', 'defaultFileType', 'defaultDownloadDir']);
   const remoteStatus = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
 
   // 决定初始模式
@@ -100,7 +103,7 @@ function bindEvents() {
   platformSelect.addEventListener('change', updatePortVisibility);
 
   configButton.addEventListener('click', async () => {
-    const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port', 'platform', 'defaultFileType']);
+    const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port', 'platform', 'defaultFileType', 'defaultDownloadDir']);
     const remoteStatus = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
     showConfigPage(remoteStatus, syncConfig);
   });
@@ -187,10 +190,13 @@ async function showConfigPage(remoteStatus, syncConfig) {
   configPage.style.display = 'block';
   taskPage.style.display = 'none';
 
+  const defaultDir = syncConfig?.defaultDownloadDir || '';
+
   // 回填本地配置
   platformSelect.value = syncConfig?.platform || 'docker';
   dockerHostInput.value = syncConfig?.host || '';
   dockerPortInput.value = syncConfig?.port || '';
+  localDefaultDownloadDir.value = defaultDir;
   defaultFileTypeInput.value = syncConfig?.defaultFileType || '';
   updatePortVisibility();
 
@@ -199,6 +205,7 @@ async function showConfigPage(remoteStatus, syncConfig) {
     remoteLoginForm.style.display = 'none';
     remoteLoggedInView.style.display = 'block';
     remoteUserDisplay.textContent = `已登录: ${remoteStatus.username || '迅雷账号'}`;
+    remoteLoggedInDefaultDownloadDir.value = defaultDir;
     remoteLoggedInFileType.value = syncConfig?.defaultFileType || '';
 
     // 填充设备下拉框
@@ -206,6 +213,7 @@ async function showConfigPage(remoteStatus, syncConfig) {
   } else {
     remoteLoginForm.style.display = 'block';
     remoteLoggedInView.style.display = 'none';
+    remoteDefaultDownloadDir.value = defaultDir;
     remoteDefaultFileType.value = syncConfig?.defaultFileType || '';
     if (remoteStatus && remoteStatus.username) {
       remoteUsernameInput.value = remoteStatus.username;
@@ -269,6 +277,8 @@ function showTaskPage(remoteStatus, syncConfig) {
 async function handleRemoteLogin() {
   const username = remoteUsernameInput.value.trim();
   const password = remotePasswordInput.value;
+  const downloadDir = remoteDefaultDownloadDir.value.trim();
+  const fileType = remoteDefaultFileType.value.trim();
 
   if (!username || !password) {
     showStatus('请输入迅雷账号和密码', 'error');
@@ -306,8 +316,11 @@ async function handleRemoteLogin() {
 
     // 登录成功
     showStatus('登录成功，正在加载设备列表...', 'success');
-    if (remoteDefaultFileType.value.trim()) {
-      await chrome.storage.sync.set({ defaultFileType: remoteDefaultFileType.value.trim() });
+    const syncUpdates = {};
+    if (downloadDir) syncUpdates.defaultDownloadDir = downloadDir;
+    if (fileType) syncUpdates.defaultFileType = fileType;
+    if (Object.keys(syncUpdates).length > 0) {
+      await chrome.storage.sync.set(syncUpdates);
     }
 
     await onRemoteLoginSuccess();
@@ -394,7 +407,7 @@ async function handleCheckSms() {
 
 async function onRemoteLoginSuccess() {
   const status = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
-  const syncConfig = await chrome.storage.sync.get(['defaultFileType']);
+  const syncConfig = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
   showConfigPage(status, syncConfig);
 }
 
@@ -404,7 +417,7 @@ async function handleRemoteLogout() {
   remoteSmsCode.value = '';
   remoteSmsSection.style.display = 'none';
   const status = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
-  const syncConfig = await chrome.storage.sync.get(['defaultFileType']);
+  const syncConfig = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
   showConfigPage(status, syncConfig);
 }
 
@@ -412,6 +425,7 @@ async function handleRemoteSave() {
   const target = remoteDeviceSelect.value;
   const selectedOption = remoteDeviceSelect.selectedOptions[0];
   const targetName = selectedOption ? selectedOption.textContent.replace(/\s*\([^)]*\)/, '') : '';
+  const defaultDownloadDir = remoteLoggedInDefaultDownloadDir.value.trim();
   const defaultFileType = remoteLoggedInFileType.value.trim();
 
   if (!target) {
@@ -421,6 +435,7 @@ async function handleRemoteSave() {
 
   await chrome.storage.sync.set({
     mode: 'remote',
+    defaultDownloadDir,
     defaultFileType
   });
 
@@ -445,6 +460,7 @@ async function handleLocalSubmit(e) {
     platform: platformSelect.value,
     host: dockerHostInput.value.trim(),
     port: dockerPortInput.value.trim(),
+    defaultDownloadDir: localDefaultDownloadDir.value.trim(),
     defaultFileType: defaultFileTypeInput.value.trim()
   };
 
