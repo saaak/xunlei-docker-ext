@@ -133,7 +133,7 @@ function addDownloadButton(targetElement, magnetLink, insertAfter) {
   
   const button = document.createElement('button');
   button.className = 'xunlei-download-btn';
-  button.textContent = 'Docker迅雷下载';
+  button.textContent = '迅雷下载';
   
   insertAfter.parentNode.insertBefore(button, insertAfter.nextSibling);
   
@@ -147,7 +147,7 @@ function addDownloadButton(targetElement, magnetLink, insertAfter) {
         type: 'getFileTree',
         magnetic_link: magnetLink
       }).then(files => {
-        if (files.length > 0) {
+        if (files && files.length > 0) {
           showFileSelection(files, magnetLink);
         } else {
           alert('未找到可下载的文件');
@@ -164,6 +164,27 @@ async function showFileSelection(files, magneticLink) {
   const container = document.createElement('div');
   container.className = 'xunlei-file-selector';
   
+  const config = await getDefaultConfig();
+  
+  // 1. 下载子目录容器
+  const taskDirContainer = document.createElement('div');
+  taskDirContainer.className = 'xunlei-task-dir';
+  
+  const taskDirLabel = document.createElement('label');
+  taskDirLabel.textContent = '下载子目录 (可选):';
+  taskDirLabel.htmlFor = 'xunlei-task-dir-input';
+  
+  const taskDirInput = document.createElement('input');
+  taskDirInput.type = 'text';
+  taskDirInput.id = 'xunlei-task-dir-input';
+  taskDirInput.placeholder = '例如 /folder/ 或 /电影/，留空保存到根目录';
+  taskDirInput.value = config.defaultDownloadDir || '';
+  
+  taskDirContainer.appendChild(taskDirLabel);
+  taskDirContainer.appendChild(taskDirInput);
+  container.appendChild(taskDirContainer);
+
+  // 2. 任务名容器
   const taskNameContainer = document.createElement('div');
   taskNameContainer.className = 'xunlei-task-name';
   
@@ -181,9 +202,9 @@ async function showFileSelection(files, magneticLink) {
   taskNameContainer.appendChild(taskNameInput);
   container.appendChild(taskNameContainer);
   
-  const defaultFileType = await getDefaultFileType();
-  function createFileTree(files, parent) {
+  const defaultFileType = config.defaultFileType || [];
 
+  function createFileTree(files, parent) {
     const ul = document.createElement('ul');
     files.forEach(file => {
       const li = document.createElement('li');
@@ -265,20 +286,33 @@ async function showFileSelection(files, magneticLink) {
       }
     });
     
-    const taskName = taskNameInput.value.trim() || selectedFiles[0]?.file_name || '下载任务';
+    const rawTaskName = taskNameInput.value.trim() || selectedFiles[0]?.file_name || '下载任务';
+    let dir = taskDirInput.value.trim();
+    let finalTaskName = rawTaskName;
+
+    if (dir) {
+      if (!dir.startsWith('/')) dir = '/' + dir;
+      if (!dir.endsWith('/')) dir = dir + '/';
+      
+      // 如果用户在任务名中没有重复手写此目录前缀，自动拼接
+      if (!rawTaskName.startsWith(dir)) {
+        finalTaskName = `${dir}${rawTaskName.replace(/^\/+/, '')}`;
+      }
+    }
     
     chrome.runtime.sendMessage({
       type: 'submitTask',
       task: {
         magnetic_link: magneticLink,
         selected_files: selectedFiles,
-        task_name: taskName
+        task_name: finalTaskName,
+        download_dir: dir
       }
     }).then(response => {
-      if (response.success) {
-        alert('任务已提交');
+      if (response && response.success) {
+        alert('任务已提交至迅雷下载');
       } else {
-        alert('提交任务失败: ' + response.error);
+        alert('提交任务失败: ' + (response?.error || '未知错误'));
       }
       container.remove();
     }).catch(error => {
@@ -309,11 +343,14 @@ observer.observe(document.body, {
   subtree: true
 });
 
-
-async function getDefaultFileType() {
-  let defaultFileType = await chrome.storage.sync.get(['defaultFileType']);
-  if (defaultFileType.defaultFileType) {
-    return defaultFileType.defaultFileType.split(',').map(type => type.trim());
+async function getDefaultConfig() {
+  const data = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
+  let fileTypes = [];
+  if (data.defaultFileType) {
+    fileTypes = data.defaultFileType.split(',').map(type => type.trim());
   }
-  return [];
+  return {
+    defaultFileType: fileTypes,
+    defaultDownloadDir: (data.defaultDownloadDir || '').trim()
+  };
 }
