@@ -4,6 +4,7 @@ export const CLIENT_ID = "Xp6vsxz_7IYVw2BB";
 export const CLIENT_SECRET = "Xp6vsy4tN9toTVdMSpomVdXpRmES";
 export const CLIENT_VERSION = "8.31.0.9726";
 export const PACKAGE_NAME = "com.xunlei.downloadprovider";
+export const APP_NAME = "ANDROID-com.xunlei.downloadprovider";
 export const APP_ID = "40";
 export const APP_KEY = "34a062aaa22f906fca4fefe9fb3a3021";
 export const SIGN_PROVIDER = "access_end_point_token";
@@ -126,4 +127,45 @@ export function getCaptchaSign(deviceId) {
     s = md5Hex(s + algo);
   }
   return { timestamp, sign: `1.${s}` };
+}
+
+/**
+ * 健壮的 JSONP / 多段拼接 JSON / 普通 JSON 响应解析器
+ * 适配迅雷 sendsms（JSONP 包装）、checksms（多段重复 JSON）等非标 HTTP 响应格式
+ */
+export function parseJsonpOrJson(text) {
+  if (!text || typeof text !== 'string') return {};
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+
+  // 1. JSONP 包装格式：callbackName({...}) 或 callbackName({...});
+  const jsonpMatch = trimmed.match(/^\w+\s*\(([\s\S]*)\)\s*;?$/);
+  if (jsonpMatch) {
+    try {
+      return JSON.parse(jsonpMatch[1]);
+    } catch (e) {}
+  }
+
+  // 2. 迅雷部分接口（如 checksms）会重复输出两段相同 JSON：{...}{...}
+  const multiJsonMatch = trimmed.match(/^(\{[\s\S]*?\})\s*\{/);
+  if (multiJsonMatch) {
+    try {
+      return JSON.parse(multiJsonMatch[1]);
+    } catch (e) {}
+  }
+
+  // 3. 直接作为普通 JSON 解析
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {}
+
+  // 4. 贪婪匹配提取第一个完整的 JSON 对象
+  const firstObjMatch = trimmed.match(/\{[\s\S]*?\}/);
+  if (firstObjMatch) {
+    try {
+      return JSON.parse(firstObjMatch[0]);
+    } catch (e) {}
+  }
+
+  return {};
 }

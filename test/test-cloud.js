@@ -23,6 +23,12 @@ async function runTests() {
   };
 
   globalThis.chrome = {
+    cookies: {
+      getAll: async () => [],
+      get: async () => null,
+      set: async () => {},
+      remove: async () => {}
+    },
     storage: {
       local: {
         get: async (keys) => {
@@ -66,6 +72,47 @@ async function runTests() {
   if (baseHeaders['x-client-id'] !== 'Xp6vsxz_7IYVw2BB') {
     throw new Error('client_id header mismatch');
   }
+
+  console.log('--- 3. Testing Resource Parser Compatibility ---');
+  const mockRawResources = [
+    { name: 'video.mp4', file_size: 1048576, file_index: 0, is_dir: false },
+    {
+      file_name: 'Subtitles',
+      kind: 'drive#folder',
+      dir: {
+        resources: [
+          { name: 'en.srt', size: '2048', index: 1 }
+        ]
+      }
+    }
+  ];
+
+  function parseResources(resList) {
+    if (!Array.isArray(resList)) return [];
+    return resList.map(resource => {
+      const isDir = Boolean(
+        resource.is_dir ||
+        resource.isDirectory ||
+        resource.kind === 'drive#folder' ||
+        (resource.dir && resource.dir.resources)
+      );
+      const childList = isDir ? (resource.dir?.resources || resource.children || resource.sub_files || []) : [];
+      return {
+        name: resource.name || resource.file_name || resource.title || '未命名文件',
+        isDirectory: isDir,
+        children: isDir ? parseResources(childList) : [],
+        file_index: resource.file_index !== undefined ? resource.file_index : (resource.index !== undefined ? resource.index : 0),
+        file_size: parseInt(resource.file_size || resource.size || 0, 10)
+      };
+    });
+  }
+
+  const parsed = parseResources(mockRawResources);
+  console.log('Parsed resources:', JSON.stringify(parsed, null, 2));
+  if (parsed.length !== 2) throw new Error('Parsed length mismatch');
+  if (parsed[0].name !== 'video.mp4' || parsed[0].file_size !== 1048576) throw new Error('Item 0 mismatch');
+  if (!parsed[1].isDirectory || parsed[1].children.length !== 1) throw new Error('Directory parsing failed');
+  if (parsed[1].children[0].name !== 'en.srt' || parsed[1].children[0].file_size !== 2048) throw new Error('Subfile mismatch');
 
   console.log('All tests passed successfully!');
 }

@@ -62,9 +62,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port', 'platform', 'defaultFileType', 'defaultDownloadDir']);
   const remoteStatus = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
 
-  // 决定初始模式
-  if (syncConfig.mode) {
-    currentMode = syncConfig.mode;
+  // 决定初始模式：明确设置了则尊重配置，未设置时已登录远程优先远程
+  if (syncConfig.mode === 'remote') {
+    currentMode = 'remote';
+  } else if (syncConfig.mode === 'local') {
+    currentMode = 'local';
   } else if (remoteStatus && remoteStatus.isLoggedIn) {
     currentMode = 'remote';
   } else if (syncConfig.host && syncConfig.port) {
@@ -90,14 +92,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function bindEvents() {
-  modeRemoteTab.addEventListener('click', () => {
+  modeRemoteTab.addEventListener('click', async () => {
     currentMode = 'remote';
     updateModeUI('remote');
+    await chrome.storage.sync.set({ mode: 'remote' });
   });
 
-  modeLocalTab.addEventListener('click', () => {
+  modeLocalTab.addEventListener('click', async () => {
     currentMode = 'local';
     updateModeUI('local');
+    await chrome.storage.sync.set({ mode: 'local' });
   });
 
   platformSelect.addEventListener('change', updatePortVisibility);
@@ -125,6 +129,14 @@ function bindEvents() {
       uncompletedTab.classList.remove('active');
       refreshTaskList();
     }
+  });
+
+  // 用户修改账密时重置短信验证区域
+  remoteUsernameInput.addEventListener('input', () => {
+    remoteSmsSection.style.display = 'none';
+  });
+  remotePasswordInput.addEventListener('input', () => {
+    remoteSmsSection.style.display = 'none';
   });
 
   // 远程登录
@@ -220,7 +232,7 @@ async function showConfigPage(remoteStatus, syncConfig) {
     }
     if (remoteStatus && remoteStatus.needVerify) {
       remoteSmsSection.style.display = 'block';
-      remoteSmsDesc.textContent = '此账号曾触发风控，需要输入短信验证码：';
+      remoteSmsDesc.textContent = '本次登录需要短信安全验证，请点击下方「获取验证码」：';
     } else {
       remoteSmsSection.style.display = 'none';
     }
@@ -288,6 +300,8 @@ async function handleRemoteLogin() {
   remoteLoginBtn.disabled = true;
   remoteLoginBtn.textContent = '正在登录迅雷...';
   clearStatus();
+  remoteSmsSection.style.display = 'none';
+  remoteSmsCode.value = '';
 
   try {
     const res = await sendMessageAsync({
@@ -304,11 +318,12 @@ async function handleRemoteLogin() {
     }
 
     if (res.needVerify) {
-      showStatus('本次登录触发迅雷安全验证，请获取并填写短信验证码', 'info');
+      showStatus('本次登录需短信验证，请点击下方「获取验证码」', 'warning');
       remoteSmsSection.style.display = 'block';
-      if (res.mobile) {
-        remoteSmsDesc.textContent = `已向手机尾号 ${res.mobile.slice(-4)} 发送验证码：`;
-      }
+      const suffix = res.mobile ? res.mobile.slice(-4) : '';
+      remoteSmsDesc.textContent = suffix
+        ? `本次登录需短信安全验证，请点击「获取验证码」向手机尾号 ${suffix} 发送：`
+        : '本次登录需短信安全验证，请点击下方「获取验证码」：';
       remoteLoginBtn.disabled = false;
       remoteLoginBtn.textContent = '登录并绑定设备';
       return;
@@ -337,7 +352,11 @@ async function handleSendSms() {
   clearStatus();
 
   try {
-    const res = await sendMessageAsync({ type: 'xlRemoteSendSms' });
+    const res = await sendMessageAsync({
+      type: 'xlRemoteSendSms',
+      username: remoteUsernameInput.value.trim(),
+      password: remotePasswordInput.value
+    });
     if (res.error) {
       showStatus(res.error, 'error');
       remoteSendSmsBtn.disabled = false;
@@ -345,7 +364,11 @@ async function handleSendSms() {
       return;
     }
 
-    showStatus('验证码已发送，请注意查收短信', 'success');
+    const suffix = res.mobile ? res.mobile.slice(-4) : '';
+    remoteSmsDesc.textContent = suffix
+      ? `已向手机尾号 ${suffix} 发送短信验证码，请查收并输入：`
+      : '已发送短信验证码，请查收并输入：';
+    showStatus('短信验证码已发送，请注意查收短信', 'success');
     let countdown = 60;
     remoteSendSmsBtn.textContent = `${countdown}s 后重新获取`;
     if (smsCountdownTimer) clearInterval(smsCountdownTimer);
@@ -391,23 +414,54 @@ async function handleCheckSms() {
 
     if (res.error) {
       showStatus(res.error, 'error');
-      remoteCheckSmsBtn.disabled = false;
-      remoteCheckSmsBtn.textContent = '验证并完成登录';
       return;
     }
 
-    showStatus('验证成功，登录就绪！', 'success');
+    if (res.needVerify) {
+      showStatus('短信验证未通过安全校验，请重新获取验证码', 'warning');
+      return;
+    }
+
+    if (res.needReLogin) {
+      showStatus(res.message || '短信验证成功！请重新点击「登录并绑定设备」完成登录', 'info');
+      remoteSmsSection.style.display = 'none';
+      return;
+    }
+
+    showStatus('验证通过，登录成功！正在加载设备...', 'success');
+    remoteSmsSection.style.display = 'none';
     await onRemoteLoginSuccess();
   } catch (err) {
     showStatus(`验证异常: ${err.message}`, 'error');
+  } finally {
     remoteCheckSmsBtn.disabled = false;
     remoteCheckSmsBtn.textContent = '验证并完成登录';
   }
 }
 
 async function onRemoteLoginSuccess() {
-  const status = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
+  currentMode = 'remote';
+  updateModeUI('remote');
+  await chrome.storage.sync.set({ mode: 'remote' });
+
+  let status = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
   const syncConfig = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
+
+  // 若已登录且发现设备，自动选定并直接进入任务面板
+  if (status && status.devices && status.devices.length > 0) {
+    if (!status.selectedTarget) {
+      const defaultDev = status.devices.find(d => d.online) || status.devices[0];
+      await sendMessageAsync({
+        type: 'xlRemoteSelectDevice',
+        target: defaultDev.target,
+        name: defaultDev.name
+      });
+      status = await sendMessageAsync({ type: 'xlRemoteGetStatus' });
+    }
+    showTaskPage(status, { mode: 'remote' });
+    return;
+  }
+
   showConfigPage(status, syncConfig);
 }
 

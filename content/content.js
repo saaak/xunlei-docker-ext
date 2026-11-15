@@ -142,19 +142,42 @@ function addDownloadButton(targetElement, magnetLink, insertAfter) {
   button.addEventListener('click', async (e) => {
     e.preventDefault();
     
+    // 检查扩展上下文连接是否依然有效（扩展重载后需提示刷新网页）
+    if (!chrome.runtime?.id) {
+      alert('扩展已更新或重新加载，请刷新当前网页(F5)后再点击下载！');
+      return;
+    }
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = '解析中...';
+
     try {
-      chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         type: 'getFileTree',
         magnetic_link: magnetLink
-      }).then(files => {
-        if (files && files.length > 0) {
-          showFileSelection(files, magnetLink);
-        } else {
-          alert('未找到可下载的文件');
-        }
       });
+
+      if (response && response.error) {
+        alert('解析磁力链接失败: ' + response.error);
+        return;
+      }
+
+      if (Array.isArray(response) && response.length > 0) {
+        showFileSelection(response, magnetLink);
+      } else {
+        alert('未找到可下载的文件，可能链接暂无可用资源或解析超时');
+      }
     } catch (error) {
-      alert('提交任务失败: 请检查迅雷服务是否正常运行');
+      console.error('解析磁力链接失败:', error);
+      if (error.message && error.message.includes('Extension context invalidated')) {
+        alert('扩展已重新加载，请刷新当前网页(F5)后再点击下载！');
+      } else {
+        alert('解析任务失败: ' + (error.message || '请检查迅雷服务或网络连接'));
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
     }
   });
 }
@@ -274,17 +297,22 @@ async function showFileSelection(files, magneticLink) {
   
   const confirmBtn = document.createElement('button');
   confirmBtn.textContent = '确认选择';
-  confirmBtn.addEventListener('click', () => {
+  confirmBtn.addEventListener('click', async () => {
     const selectedFiles = [];
     container.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
       if (!checkbox.parentElement.querySelector('.directory')) {
         selectedFiles.push({
-          index: parseInt(checkbox.dataset.fileIndex),
-          file_size: parseInt(checkbox.dataset.fileSize),
+          index: parseInt(checkbox.dataset.fileIndex, 10),
+          file_size: parseInt(checkbox.dataset.fileSize, 10),
           file_name: checkbox.dataset.fileName
         });
       }
     });
+
+    if (selectedFiles.length === 0) {
+      alert('请至少勾选一个需要下载的文件');
+      return;
+    }
     
     const rawTaskName = taskNameInput.value.trim() || selectedFiles[0]?.file_name || '下载任务';
     let dir = taskDirInput.value.trim();
@@ -299,25 +327,43 @@ async function showFileSelection(files, magneticLink) {
         finalTaskName = `${dir}${rawTaskName.replace(/^\/+/, '')}`;
       }
     }
+
+    if (!chrome.runtime?.id) {
+      alert('扩展已更新或重新加载，请刷新当前网页(F5)后再试');
+      return;
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '正在提交任务...';
     
-    chrome.runtime.sendMessage({
-      type: 'submitTask',
-      task: {
-        magnetic_link: magneticLink,
-        selected_files: selectedFiles,
-        task_name: finalTaskName,
-        download_dir: dir
-      }
-    }).then(response => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'submitTask',
+        task: {
+          magnetic_link: magneticLink,
+          selected_files: selectedFiles,
+          task_name: finalTaskName,
+          download_dir: dir
+        }
+      });
+
       if (response && response.success) {
-        alert('任务已提交至迅雷下载');
+        alert('任务已成功提交至迅雷下载！');
+        container.remove();
       } else {
         alert('提交任务失败: ' + (response?.error || '未知错误'));
       }
-      container.remove();
-    }).catch(error => {
-      alert('提交任务失败: ' + error.message);
-    });
+    } catch (error) {
+      console.error('提交任务异常:', error);
+      if (error.message && error.message.includes('Extension context invalidated')) {
+        alert('扩展已更新或重新加载，请刷新当前网页(F5)后再试');
+      } else {
+        alert('提交任务失败: ' + (error.message || '网络连接异常'));
+      }
+    } finally {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '确认选择';
+    }
   });
   
   const cancelBtn = document.createElement('button');
@@ -344,13 +390,18 @@ observer.observe(document.body, {
 });
 
 async function getDefaultConfig() {
-  const data = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
-  let fileTypes = [];
-  if (data.defaultFileType) {
-    fileTypes = data.defaultFileType.split(',').map(type => type.trim());
+  try {
+    if (!chrome.runtime?.id) return { defaultFileType: [], defaultDownloadDir: '' };
+    const data = await chrome.storage.sync.get(['defaultFileType', 'defaultDownloadDir']);
+    let fileTypes = [];
+    if (data.defaultFileType) {
+      fileTypes = data.defaultFileType.split(',').map(type => type.trim());
+    }
+    return {
+      defaultFileType: fileTypes,
+      defaultDownloadDir: (data.defaultDownloadDir || '').trim()
+    };
+  } catch (e) {
+    return { defaultFileType: [], defaultDownloadDir: '' };
   }
-  return {
-    defaultFileType: fileTypes,
-    defaultDownloadDir: (data.defaultDownloadDir || '').trim()
-  };
 }

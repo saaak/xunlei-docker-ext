@@ -22,17 +22,27 @@ let lastUncompletedTaskMap = new Map(); // 存储上次检查时未完成的任�
  */
 async function getEffectiveMode() {
   const syncConfig = await chrome.storage.sync.get(['mode', 'host', 'port']);
-  if (syncConfig.mode) {
-    return syncConfig.mode;
-  }
   const creds = await xlCloud.getCredentials();
+
+  if (syncConfig.mode === MODE_REMOTE && creds.xl_access_token) {
+    return MODE_REMOTE;
+  }
+  if (syncConfig.mode === MODE_LOCAL && syncConfig.host && syncConfig.port) {
+    return MODE_LOCAL;
+  }
+  if (syncConfig.mode === MODE_REMOTE) {
+    return MODE_REMOTE;
+  }
+  if (syncConfig.mode === MODE_LOCAL) {
+    return MODE_LOCAL;
+  }
   if (creds.xl_access_token) {
     return MODE_REMOTE;
   }
   if (syncConfig.host && syncConfig.port) {
     return MODE_LOCAL;
   }
-  return MODE_REMOTE;
+  return syncConfig.mode || MODE_REMOTE;
 }
 
 // -------------------------------------------------------------
@@ -255,30 +265,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const mode = await getEffectiveMode();
+        console.log(`[getFileTree] 当前模式: ${mode}`);
+
         let extractRes;
         if (mode === MODE_REMOTE) {
+          const creds = await xlCloud.getCredentials();
+          if (!creds.xl_access_token) {
+            throw new Error('迅雷远程未登录，请点击扩展图标登录迅雷账号');
+          }
           extractRes = await xlCloud.extractFileList(message.magnetic_link);
         } else {
           extractRes = await getLocalExtractFileList(message.magnetic_link);
         }
 
-        const resources = extractRes?.list?.resources || [];
+        const rawList = extractRes?.list;
+        const resources = Array.isArray(rawList)
+          ? rawList
+          : (rawList?.resources || extractRes?.resources || extractRes?.files || []);
 
         function parseResources(resList) {
-          return resList.map(resource => ({
-            name: resource.name,
-            isDirectory: resource.is_dir,
-            children: resource.is_dir ? parseResources(resource.dir?.resources || []) : [],
-            file_index: resource.file_index || 0,
-            file_size: resource.file_size || 0
-          }));
+          if (!Array.isArray(resList)) return [];
+          return resList.map(resource => {
+            const isDir = Boolean(
+              resource.is_dir ||
+              resource.isDirectory ||
+              resource.kind === 'drive#folder' ||
+              (resource.dir && resource.dir.resources)
+            );
+            const childList = isDir ? (resource.dir?.resources || resource.children || resource.sub_files || []) : [];
+            return {
+              name: resource.name || resource.file_name || resource.title || '未命名文件',
+              isDirectory: isDir,
+              children: isDir ? parseResources(childList) : [],
+              file_index: resource.file_index !== undefined ? resource.file_index : (resource.index !== undefined ? resource.index : 0),
+              file_size: parseInt(resource.file_size || resource.size || 0, 10)
+            };
+          });
         }
 
         const files = parseResources(resources);
+        if (files.length === 0) {
+          const errDesc = extractRes?.errorDesc || extractRes?.error_description || extractRes?.error;
+          if (errDesc && errDesc !== 'success') {
+            throw new Error(`迅雷云端解析失败: ${errDesc}`);
+          }
+        }
+
         sendResponse(files);
       } catch (error) {
         console.error('Failed to get file tree:', error);
-        sendResponse([]);
+        sendResponse({ error: error.message || '获取文件树失败' });
       }
     })();
     return true;
@@ -367,14 +403,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 5. 迅雷远程通道：登录
   if (message.type === 'xlRemoteLogin') {
     xlCloud.login(message.username, message.password)
-      .then(res => sendResponse(res))
+      .then(async res => {
+        if (res && res.success) {
+          await chrome.storage.sync.set({ mode: MODE_REMOTE });
+        }
+        sendResponse(res);
+      })
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }
 
   // 6. 迅雷远程通道：发送短信验证码
   if (message.type === 'xlRemoteSendSms') {
-    xlCloud.reviewSendSms()
+    xlCloud.reviewSendSms(message.username, message.password)
       .then(res => sendResponse(res))
       .catch(err => sendResponse({ error: err.message }));
     return true;
@@ -383,7 +424,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 7. 迅雷远程通道：校验短信验证码并自动重新登录
   if (message.type === 'xlRemoteCheckSms') {
     xlCloud.reviewCheckSms(message.smsCode, message.username, message.password)
-      .then(res => sendResponse(res))
+      .then(async res => {
+        if (res && res.success) {
+          await chrome.storage.sync.set({ mode: MODE_REMOTE });
+        }
+        sendResponse(res);
+      })
       .catch(err => sendResponse({ error: err.message }));
     return true;
   }
@@ -424,6 +470,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (isLoggedIn) {
           try {
             devices = await xlCloud.getDeviceTargets();
+            if (!creds.xl_selected_target && devices.length > 0) {
+              const defaultDev = devices.find(d => d.online) || devices[0];
+              await xlCloud.saveCredentials({
+                xl_selected_target: defaultDev.target,
+                xl_selected_target_name: defaultDev.name
+              });
+              creds.xl_selected_target = defaultDev.target;
+              creds.xl_selected_target_name = defaultDev.name;
+            }
           } catch (e) {
             console.warn('获取设备列表失败:', e);
           }

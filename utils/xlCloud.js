@@ -3,13 +3,15 @@ import {
   CLIENT_SECRET,
   CLIENT_VERSION,
   PACKAGE_NAME,
+  APP_NAME,
   APP_ID,
   APP_KEY,
   SIGN_PROVIDER,
   REDIRECT_URI,
   md5Hex,
   getDeviceSign,
-  getCaptchaSign
+  getCaptchaSign,
+  parseJsonpOrJson
 } from './xlCrypto.js';
 
 const XLUSER_BASE = "https://xluser-ssl.xunlei.com";
@@ -46,6 +48,7 @@ class XunleiCloud {
       'xl_user_id',
       'xl_captcha_token',
       'xl_login_name',
+      'xl_login_pwd',
       'xl_creditkey',
       'xl_review_url',
       'xl_review_token',
@@ -69,6 +72,7 @@ class XunleiCloud {
       'xl_user_id',
       'xl_captcha_token',
       'xl_login_name',
+      'xl_login_pwd',
       'xl_creditkey',
       'xl_review_url',
       'xl_review_token',
@@ -78,6 +82,30 @@ class XunleiCloud {
       'xl_parent_folder_id',
       'xl_parent_folder_path'
     ]);
+  }
+
+  /**
+   * 读取迅雷域下的全部 Cookie (用于跨域表单与接口回写的 Set-Cookie 捕获)
+   */
+  async getXunleiCookies() {
+    if (typeof chrome === 'undefined' || !chrome.cookies) return {};
+    try {
+      const map = {};
+      const [byUrl, byDomain] = await Promise.all([
+        chrome.cookies.getAll({ url: 'https://xluser-ssl.xunlei.com' }).catch(() => []),
+        chrome.cookies.getAll({ domain: 'xunlei.com' }).catch(() => [])
+      ]);
+      for (const c of byDomain) {
+        map[c.name] = c.value;
+      }
+      for (const c of byUrl) {
+        map[c.name] = c.value;
+      }
+      return map;
+    } catch (e) {
+      console.warn('获取迅雷 Cookie 异常:', e);
+      return {};
+    }
   }
 
   // -------------------------------------------------------------
@@ -114,7 +142,7 @@ class XunleiCloud {
   /**
    * 登录第一步：V3 核心登录
    */
-  async _coreLogin(username, password) {
+  async _coreLogin(username, password, explicitCreditKey = '') {
     const deviceId = await this.getDeviceId();
     const deviceSign = await getDeviceSign(deviceId);
     const creds = await this.getCredentials();
@@ -127,7 +155,7 @@ class XunleiCloud {
       appid: APP_ID,
       clientVersion: CLIENT_VERSION,
       peerID: "0".repeat(32),
-      appName: PACKAGE_NAME,
+      appName: APP_NAME,
       sdkVersion: "512000",
       devicesign: deviceSign,
       netWorkType: "WIFI",
@@ -135,7 +163,7 @@ class XunleiCloud {
       deviceModel: "M2004J7AC",
       deviceName: "Xiaomi_M2004j7ac",
       OSVersion: "12",
-      creditkey: creds.xl_creditkey || "",
+      creditkey: explicitCreditKey || creds.xl_creditkey || "",
       hl: "zh-CN",
       userName: username,
       passWord: password,
@@ -148,7 +176,8 @@ class XunleiCloud {
     const resp = await fetch(`${XLUSER_BASE}/xluser.core.login/v3/login`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      credentials: 'include'
     });
 
     const data = await resp.json();
@@ -174,7 +203,8 @@ class XunleiCloud {
     const resp = await fetch(`${XLUSER_API}/shield/captcha/init`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      credentials: 'include'
     });
 
     const data = await resp.json();
@@ -209,16 +239,22 @@ class XunleiCloud {
   /**
    * 完整登录链路
    */
-  async login(username, password) {
+  async login(username, password, explicitCreditKey = '') {
     if (!username || !password) {
       throw new Error("请输入迅雷账号和密码");
     }
 
-    const loginData = await this._coreLogin(username, password);
+    // 暂存用于当前验证会话的账密，防止验证码等待期间弹窗关闭丢失密码
+    await this.saveCredentials({
+      xl_login_name: username,
+      xl_login_pwd: password
+    });
+
+    const loginData = await this._coreLogin(username, password, explicitCreditKey);
 
     // 检查风控 review_panel
     if ((loginData.error || '').trim() === 'review_panel') {
-      const reviewUrl = loginData.reviewurl || '';
+      let reviewUrl = loginData.reviewurl || '';
       const creditKey = loginData.creditkey || '';
       
       let mobile = '';
@@ -229,9 +265,17 @@ class XunleiCloud {
         } catch (e) {}
       }
 
+      const deviceId = await this.getDeviceId();
+      const deviceSign = await getDeviceSign(deviceId);
+      if (reviewUrl && !reviewUrl.includes('deviceid=')) {
+        reviewUrl += (reviewUrl.includes('?') ? '&' : '?') + 'deviceid=' + encodeURIComponent(deviceSign);
+      }
+
       await this.saveCredentials({
         xl_review_url: reviewUrl,
         xl_creditkey: creditKey,
+        xl_review_key: creditKey,
+        xl_review_token: '',
         xl_login_name: username
       });
 
@@ -294,7 +338,8 @@ class XunleiCloud {
       xl_token_type: tokenData.token_type || 'Bearer',
       xl_user_id: tokenData.user_id || tokenData.sub || userId,
       xl_login_name: username,
-      xl_creditkey: '',
+      xl_login_pwd: '',
+      xl_creditkey: loginData.creditkey || '',
       xl_review_url: '',
       xl_review_token: '',
       xl_review_key: ''
@@ -321,19 +366,22 @@ class XunleiCloud {
     }
 
     const headers = await this.getBaseHeaders();
+    // 关键：迅雷对浏览器端 OAuth refresh_token 做了安全限制，禁止在前端携带 client_secret
     const resp = await fetch(`${XLUSER_API}/auth/token`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         grant_type: "refresh_token",
         refresh_token: refresh,
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET
+        client_id: CLIENT_ID
       })
     });
 
     const data = await resp.json();
     if (!data.access_token) {
+      if (data.error === 'invalid_grant' || data.error_code === 4126) {
+        throw new Error("迅雷登录会话已过期，请点击插件图标重新登录迅雷账号");
+      }
       throw new Error(`刷新访问令牌失败: ${data.error_description || data.error || '未知错误'}`);
     }
 
@@ -369,8 +417,7 @@ class XunleiCloud {
       deviceModel: "M2004J7AC",
       deviceName: "Xiaomi_M2004j7ac",
       OSVersion: "12",
-      smsEvent: "34",
-      creditkey: creds.xl_review_key || creds.xl_creditkey || ""
+      smsEvent: "34"
     };
 
     if (reviewUrl) {
@@ -387,40 +434,77 @@ class XunleiCloud {
       delete params.deviceid;
     }
 
+    // 关键：creditkey 必须在 searchParams 覆盖之后取最新的运行态 key，否则会被 reviewUrl 里的旧 key 冲掉
+    params.creditkey = creds.xl_review_key || creds.xl_creditkey || params.creditkey || "";
+    params.smsEvent = "34";
+
     return params;
   }
 
   /**
    * 发送短信验证码
    */
-  async reviewSendSms() {
+  async reviewSendSms(username = '', password = '') {
     const creds = await this.getCredentials();
     if (!creds.xl_review_url) {
-      throw new Error("当前没有处于待短信验证状态");
+      throw new Error("当前没有处于待短信验证状态，请先点击登录");
     }
 
-    const payload = await this._getReviewPayload();
     const deviceId = await this.getDeviceId();
-    payload.csrf_token = md5Hex(deviceId);
 
-    let host = XLUSER_BASE;
-    try {
-      const u = new URL(creds.xl_review_url);
-      const mainHost = u.searchParams.get('mainHost');
-      if (mainHost) {
-        host = `https://${mainHost.split(',')[0].replace(/^https?:\/\//, '').trim()}`;
+    const doSend = async () => {
+      const payload = await this._getReviewPayload();
+      payload.csrf_token = md5Hex(deviceId);
+      // 关键：sendsms 必须附带 callback，走 JSONP 模式，服务端才会将 token 返回在响应体中
+      payload.callback = "xl_sendsms_cb";
+
+      let host = XLUSER_BASE;
+      try {
+        const u = new URL(creds.xl_review_url);
+        const mainHost = u.searchParams.get('mainHost');
+        if (mainHost) {
+          host = `https://${mainHost.split(',')[0].replace(/^https?:\/\//, '').trim()}`;
+        }
+      } catch (e) {}
+
+      const queryStr = new URLSearchParams(payload).toString();
+      const resp = await fetch(`${host}/xluser.core.login/v3/sendsms?${queryStr}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      const text = await resp.text();
+      const data = parseJsonpOrJson(text);
+      return { data, payload };
+    };
+
+    let { data, payload } = await doSend();
+    let code = String(data.errorCode || data.error_code || '0');
+
+    // 若会话失效（13 / userinfo_expired），且有账密，自动重登刷新会话并重试一次
+    const loginUser = username || creds.xl_login_name || '';
+    if ((code === '13' || (data.error || '').trim() === 'userinfo_expired') && loginUser && password) {
+      try {
+        await this._coreLogin(loginUser, password);
+        const retryRes = await doSend();
+        data = retryRes.data;
+        payload = retryRes.payload;
+        code = String(data.errorCode || data.error_code || '0');
+      } catch (e) {
+        // 忽略重登错误，继续向下判定错误码
       }
-    } catch (e) {}
+    }
 
-    const queryStr = new URLSearchParams(payload).toString();
-    const resp = await fetch(`${host}/xluser.core.login/v3/sendsms?${queryStr}`, {
-      method: 'GET'
-    });
+    if (code === '1007' || code === '6') {
+      throw new Error("该次验证触发了图形人机验证，请使用迅雷 App 打开验证链接完成验证");
+    }
 
-    const data = await resp.json();
-    const code = String(data.errorCode || data.error_code || '0');
     if (code !== '0') {
-      throw new Error(`获取验证码失败：${data.errorDesc || data.error_description || data.error || code}`);
+      const msg = data.errorDesc || data.error_description || data.error || `错误码[${code}]`;
+      if (code === '13' || (data.error || '').trim() === 'userinfo_expired') {
+        throw new Error(`验证会话已过期[13]，请重新点击“登录并绑定设备”获取新验证码`);
+      }
+      throw new Error(`获取验证码失败：${msg}`);
     }
 
     const token = data.token || '';
@@ -428,7 +512,7 @@ class XunleiCloud {
       throw new Error("获取验证码失败：未返回 token");
     }
 
-    const newCreditKey = data.creditkey || creds.xl_creditkey || '';
+    const newCreditKey = data.creditkey || creds.xl_review_key || creds.xl_creditkey || '';
     await this.saveCredentials({
       xl_review_token: token,
       xl_review_key: newCreditKey,
@@ -447,13 +531,14 @@ class XunleiCloud {
     if (!token) {
       throw new Error("请先点击获取验证码");
     }
-    if (!/^\d{6}$/.test(smsCode.trim())) {
+    const cleanCode = (smsCode || '').trim();
+    if (!/^\d{6}$/.test(cleanCode)) {
       throw new Error("请输入 6 位数字验证码");
     }
 
     const payload = await this._getReviewPayload();
     payload.token = token;
-    payload.smsCode = smsCode.trim();
+    payload.smsCode = cleanCode;
 
     let host = XLUSER_BASE;
     try {
@@ -471,30 +556,65 @@ class XunleiCloud {
 
     const resp = await fetch(`${host}/xluser.core.login/v3/checksms`, {
       method: 'POST',
-      body: formData
+      body: formData,
+      credentials: 'include'
     });
 
-    const data = await resp.json();
-    if (String(data.blogresult || '') !== '0') {
-      throw new Error(`验证码校验失败：${data.errorDesc || data.error_description || data.error || '验证码错误'}`);
+    // 关键：checksms 在成功时响应体为空，结果全在 Set-Cookie 回写：
+    // blogresult=0 / securitytoken=... / token=... / creditkey=...；失败时也是 Set-Cookie 带 error/blogresult
+    // 页面以 cookie 为地面真相，因此必须从 chrome.cookies 读取并合并
+    const text = await resp.text();
+    const data = parseJsonpOrJson(text);
+
+    const xunleiCookies = await this.getXunleiCookies();
+    for (const [name, val] of Object.entries(xunleiCookies)) {
+      if (val !== undefined && val !== '') {
+        if (!data[name] || name === 'blogresult' || name === 'securitytoken' || name === 'creditkey' || name === 'error') {
+          data[name] = val;
+        }
+      }
+    }
+
+    const blogresult = String(data.blogresult !== undefined ? data.blogresult : '');
+    const errorCode = String(data.errorCode || data.error_code || '');
+    const errorMsg = String(data.error || '');
+
+    if (blogresult !== '0') {
+      if (errorCode === '13' || errorMsg.trim() === 'userinfo_expired') {
+        throw new Error("验证会话已过期[13]，请重新点击获取验证码");
+      }
+      const errDetail = data.errorDesc || data.error_description || errorMsg || (blogresult ? `错误码[${blogresult}]` : '未收到有效校验凭据');
+      throw new Error(`验证码校验失败：${errDetail}`);
     }
 
     // 校验成功，上报信用获取续期 creditkey
-    let renewedCreditKey = data.creditkey || '';
+    const deviceId = await this.getDeviceId();
+    const reportDeviceId = xunleiCookies.deviceid || deviceId;
+    const reportCreditKey = data.creditkey || xunleiCookies.creditkey || creds.xl_review_key || creds.xl_creditkey || "";
+    const securityToken = data.securitytoken || xunleiCookies.securitytoken || "";
+
+    let renewedCreditKey = '';
     try {
-      const deviceId = await this.getDeviceId();
+      const seed = reportDeviceId.slice(0, 32);
+      const csrfToken = md5Hex(seed);
       const reportParams = new URLSearchParams({
         type: "sms",
         scene: "34",
-        userid: payload.userID || "",
-        data: data.securitytoken || "",
-        result: data.blogresult || "",
-        appid: payload.appid || "",
-        deviceid: deviceId,
-        creditkey: creds.xl_review_key || creds.xl_creditkey || ""
+        userid: payload.userID || payload.userid || "",
+        data: securityToken,
+        result: blogresult || "0",
+        appid: payload.appid || "40",
+        deviceid: reportDeviceId,
+        creditkey: reportCreditKey,
+        callback: "xl_report_cb",
+        csrf_token: csrfToken,
+        _: Date.now().toString()
       });
-      const repResp = await fetch(`${host}/credit/v1/report?${reportParams.toString()}`);
-      const repData = await repResp.json();
+      const repResp = await fetch(`${host}/credit/v1/report?${reportParams.toString()}`, {
+        credentials: 'include'
+      });
+      const repText = await repResp.text();
+      const repData = parseJsonpOrJson(repText);
       if (String(repData.code) === '200' && repData.creditkey) {
         renewedCreditKey = repData.creditkey;
       }
@@ -502,15 +622,56 @@ class XunleiCloud {
       console.warn("上报信用续期异常:", e);
     }
 
+    // 优先使用 report 续期出来的密钥，其次 checksms 响应/Cookie 里的，最后沿用会话密钥
+    const finalCreditKey = renewedCreditKey || data.creditkey || xunleiCookies.creditkey || creds.xl_review_key || creds.xl_creditkey || '';
+
+    // 关键：将续期后的信任密钥写回 cookie 罐，与 vertifyPhone.js 的 setKey 对齐
+    if (finalCreditKey && typeof chrome !== 'undefined' && chrome.cookies) {
+      try {
+        await chrome.cookies.set({
+          url: 'https://xluser-ssl.xunlei.com',
+          name: 'creditkey',
+          value: finalCreditKey,
+          domain: '.xunlei.com',
+          path: '/'
+        });
+      } catch (e) {}
+    }
+
     await this.saveCredentials({
-      xl_creditkey: renewedCreditKey || creds.xl_review_key || creds.xl_creditkey,
+      xl_creditkey: finalCreditKey,
       xl_review_url: '',
       xl_review_token: '',
       xl_review_key: ''
     });
 
+    // 消耗型临时 Cookie 清理
+    if (typeof chrome !== 'undefined' && chrome.cookies) {
+      try {
+        await chrome.cookies.remove({ url: 'https://xluser-ssl.xunlei.com', name: 'blogresult' });
+        await chrome.cookies.remove({ url: 'https://xluser-ssl.xunlei.com', name: 'error' });
+      } catch (e) {}
+    }
+
     // 验证成功后，使用续期信用密钥重新登录
-    return await this.login(username || creds.xl_login_name, password);
+    const effectiveUser = username || creds.xl_login_name || '';
+    const effectivePass = password || creds.xl_login_pwd || '';
+
+    if (!effectiveUser || !effectivePass) {
+      return {
+        needVerify: false,
+        needReLogin: true,
+        creditKey: finalCreditKey,
+        message: '短信验证成功！请重新点击「登录并绑定设备」完成登录'
+      };
+    }
+
+    const loginRes = await this.login(effectiveUser, effectivePass, finalCreditKey);
+    if (loginRes.needVerify) {
+      throw new Error("短信验证已通过，但安全令牌未能通过风控，请重新获取验证码完成验证");
+    }
+
+    return loginRes;
   }
 
   // -------------------------------------------------------------
@@ -562,15 +723,25 @@ class XunleiCloud {
       }
 
       // 令牌过期自动刷新重试
-      if (attempt < 2 && TOKEN_ERROR_CODES.has(errCode)) {
-        console.log(`令牌过期 (code=${errCode})，正在自动刷新 Access Token...`);
+      const isTokenExpired = TOKEN_ERROR_CODES.has(errCode) ||
+        data.error === 'token_invalid' ||
+        data.error === 'invalid_token' ||
+        errText.toLowerCase().includes('token');
+
+      if (attempt < 2 && isTokenExpired) {
+        console.log(`令牌过期 (code=${errCode}, error=${data.error})，正在自动刷新 Access Token...`);
         await this.refreshAccessToken();
         continue;
       }
 
       // 人机令牌失效自动刷新重试
-      if (attempt < 2 && errCode === CAPTCHA_ERROR_CODE) {
-        console.log(`人机令牌失效 (code=${errCode})，正在刷新 Drive Captcha Token...`);
+      const isCaptchaInvalid = errCode === CAPTCHA_ERROR_CODE ||
+        data.error === 'captcha_invalid' ||
+        errText.includes('x-captcha-token') ||
+        errText.includes('captcha');
+
+      if (attempt < 2 && isCaptchaInvalid) {
+        console.log(`人机令牌失效 (code=${errCode}, error=${data.error})，正在刷新 Drive Captcha Token...`);
         await this.refreshDriveCaptcha(action);
         continue;
       }

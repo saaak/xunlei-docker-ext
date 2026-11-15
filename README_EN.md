@@ -1,7 +1,7 @@
 # Xunlei Docker Download Assistant Chrome Extension
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](https://github.com/saaak/xunlei-docker-ext/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-green.svg)](https://github.com/saaak/xunlei-docker-ext/releases)
 
 [简体中文](README.md) | English
 
