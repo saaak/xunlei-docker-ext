@@ -1,3 +1,6 @@
+export const MODE_LOCAL = 'local';
+export const MODE_REMOTE = 'remote';
+
 export const PLATFORM_DOCKER = 'docker';
 export const PLATFORM_FNOS = 'fnos';
 

@@ -2,41 +2,132 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>迅雷Docker下载助手</title>
+  <title>迅雷下载助手</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="container">
+    <!-- 配置页面 -->
     <div id="configPage">
-      <h1>配置</h1>
-      <form id="configForm">
-        <div class="form-group">
-          <label for="platform">平台:</label>
-          <select id="platform">
-            <option value="docker">Docker</option>
-            <option value="fnos">飞牛原生</option>
-          </select>
+      <h1>设置与配置</h1>
+      
+      <!-- 模式切换选项卡 -->
+      <div class="mode-selector">
+        <button type="button" id="modeRemoteTab" class="mode-tab active">迅雷远程 (推荐)</button>
+        <button type="button" id="modeLocalTab" class="mode-tab">本地直连</button>
+      </div>
+
+      <!-- 模式一：迅雷远程通道 -->
+      <div id="remoteConfigSection">
+        <!-- 未登录状态 -->
+        <div id="remoteLoginForm" style="display: none;">
+          <div class="form-group">
+            <label for="remoteUsername">迅雷账号 / 手机号:</label>
+            <input type="text" id="remoteUsername" placeholder="请输入手机号/邮箱/迅雷号" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="remotePassword">密码:</label>
+            <input type="password" id="remotePassword" placeholder="请输入迅雷密码" required autocomplete="current-password">
+          </div>
+          <div class="form-group">
+            <label for="remoteDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="remoteDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
+          </div>
+          <div class="form-group">
+            <label for="remoteDefaultFileType">默认文件类型:</label>
+            <input type="text" id="remoteDefaultFileType" placeholder="逗号分割：mp4,mkv,avi，留空全选">
+          </div>
+          <button type="button" id="remoteLoginBtn" class="primary-btn">登录并绑定设备</button>
+
+          <!-- 短信验证码区块（触发风控时显示） -->
+          <div id="remoteSmsSection" class="verify-box" style="display: none;">
+            <div class="verify-title">🛡️ 迅雷安全风控验证</div>
+            <div class="verify-desc" id="remoteSmsDesc">需要进行一次短信验证以授权此设备：</div>
+            <div class="sms-input-row">
+              <input type="text" id="remoteSmsCode" placeholder="6 位验证码" maxlength="6">
+              <button type="button" id="remoteSendSmsBtn" class="sms-btn">获取验证码</button>
+            </div>
+            <button type="button" id="remoteCheckSmsBtn" class="primary-btn">验证并完成登录</button>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="dockerHost">Host:</label>
-          <input type="text" id="dockerHost" required>
+
+        <!-- 已登录状态 -->
+        <div id="remoteLoggedInView" style="display: none;">
+          <div class="user-card">
+            <div class="user-info">
+              <span class="user-status-dot"></span>
+              <span id="remoteUserDisplay">已登录</span>
+            </div>
+            <button type="button" id="remoteLogoutBtn" class="text-btn">切换账号</button>
+          </div>
+
+          <div class="form-group">
+            <label for="remoteDeviceSelect">下载目标设备 (远程 NAS / 迅雷):</label>
+            <select id="remoteDeviceSelect">
+              <option value="">正在获取设备列表...</option>
+            </select>
+            <div class="field-hint">任务将直接下发到此设备，不消耗套件每日任务配额</div>
+          </div>
+
+          <div class="form-group">
+            <label for="remoteLoggedInDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="remoteLoggedInDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
+          </div>
+
+          <div class="form-group">
+            <label for="remoteLoggedInFileType">默认文件类型:</label>
+            <input type="text" id="remoteLoggedInFileType" placeholder="逗号分割：mp4,mkv,avi，留空全选">
+          </div>
+
+          <button type="button" id="remoteSaveBtn" class="primary-btn">保存并进入任务面板</button>
         </div>
-        <div class="form-group" id="portGroup">
-          <label for="dockerPort">Port:</label>
-          <input type="number" id="dockerPort" required>
-        </div>
-        <div class="form-group">
-          <label for="defaultFileType">默认文件类型:</label>
-          <input type="text" id="defaultFileType" placeholder="逗号分割：mp4,avi，没有则默认全选">
-        </div>
-        <button type="submit">保存配置</button>
-      </form>
+      </div>
+
+      <!-- 模式二：本地直连（Docker / 飞牛套件） -->
+      <div id="localConfigSection" style="display: none;">
+        <form id="localConfigForm">
+          <div class="form-group">
+            <label for="platform">平台类型:</label>
+            <select id="platform">
+              <option value="docker">Docker 容器 (默认端口 2345)</option>
+              <option value="fnos">飞牛原生应用 (默认端口 5666)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="dockerHost">主机地址 (IP / 域名):</label>
+            <input type="text" id="dockerHost" placeholder="例如 192.168.1.100" required>
+          </div>
+          <div class="form-group" id="portGroup">
+            <label for="dockerPort">端口:</label>
+            <input type="number" id="dockerPort" placeholder="2345" required>
+          </div>
+          <div class="form-group">
+            <label for="localDefaultDownloadDir">默认下载目录 (可选):</label>
+            <input type="text" id="localDefaultDownloadDir" placeholder="例如 /folder/ 或 /电影/，留空保存到根目录">
+            <div class="field-hint">提交下载任务时会自动作为保存子目录前缀</div>
+          </div>
+          <div class="form-group">
+            <label for="defaultFileType">默认文件类型:</label>
+            <input type="text" id="defaultFileType" placeholder="逗号分割：mp4,avi，留空全选">
+          </div>
+          <button type="submit" class="primary-btn">保存配置</button>
+        </form>
+      </div>
+
+      <!-- 全局状态提示信息 -->
+      <div id="configStatusMessage" class="status-msg" style="display: none;"></div>
     </div>
     
+    <!-- 任务列表页面 -->
     <div id="taskPage" style="display: none;">
       <div class="header">
-        <h1>下载任务</h1>
-        <button id="configButton">修改配置</button>
+        <div>
+          <h1>下载任务</h1>
+          <div id="currentModeBadge" class="mode-badge">远程通道</div>
+        </div>
+        <button id="configButton" class="secondary-btn">修改配置</button>
       </div>
       <div class="tabs">
         <button id="uncompletedTab" class="tab active">未完成</button>
@@ -47,6 +138,6 @@
     </div>
   </div>
 
-  <script src="popup.js"></script>
+  <script src="popup.js" type="module"></script>
 </body>
 </html>
